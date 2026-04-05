@@ -1252,7 +1252,8 @@ async function onPlayerState(e) {
     const vid  = info.video_id;
 
     if (vid && vid !== currentVideoId) {
-      // New video — reset and fetch fresh lyrics
+      // New video — pause immediately so audio and lyrics start together,
+      // then fetch lyrics, then seek to 0 and resume.
       currentVideoId = vid;
       stopSync();
       lyrics       = [];
@@ -1261,15 +1262,25 @@ async function onPlayerState(e) {
       clearOverlay();
       showPanel('loading');
 
-      lyrics = await fetchLyrics(info.title || '', player.getDuration());
+      // Hold the video while we fetch — grab duration before pausing
+      // because getDuration() is reliable while PLAYING.
+      const duration = player.getDuration();
+      player.pauseVideo();
+
+      lyrics = await fetchLyrics(info.title || '', duration);
 
       if (lyrics.length) {
         renderLyricsPanel();
         if (displayMode === 'karaoke') {
           document.getElementById('lyricsOverlay').classList.add('visible');
         }
-        setStatus('ok', `${lyrics.length} lines synced`);
       }
+
+      // Seek to beginning and resume; the resulting PLAYING event will
+      // hit the else-branch below and call startSync().
+      player.seekTo(0, true);
+      player.playVideo();
+      return;   // don't call startSync() here — wait for the PLAYING re-fire
     }
 
     startSync();
