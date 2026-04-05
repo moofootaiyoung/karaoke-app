@@ -1,0 +1,2025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KaraokeMode</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎤</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080810;
+  --surface: #0f0f1c;
+  --surface2: #16162a;
+  --border: #1e1e35;
+  --accent: #e8ff47;
+  --accent2: #ff6bff;
+  --text: #f0f0f0;
+  --muted: #55556a;
+  --lyric-color: #ffffff;
+  --lyric-size: 38px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Grain texture */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.35;
+}
+
+/* ── Header ── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 22px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--surface);
+}
+
+.logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  letter-spacing: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.logo span {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  color: var(--muted);
+  -webkit-text-fill-color: var(--muted);
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.url-form {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  max-width: 680px;
+}
+
+.url-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 14px;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.url-input::placeholder { color: var(--muted); }
+.url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232,255,71,0.1); }
+
+.url-btn {
+  background: var(--accent);
+  color: #080810;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 20px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 16px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+  white-space: nowrap;
+}
+.url-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+.url-btn:active { transform: translateY(0); }
+
+.queue-add-btn {
+  background: transparent;
+  color: var(--accent2);
+  border: 1px solid rgba(255,107,255,0.35);
+  border-radius: 8px;
+  padding: 9px 15px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.queue-add-btn:hover { background: rgba(255,107,255,0.1); transform: translateY(-1px); }
+
+/* Status badge */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  margin-left: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.status-badge.ok  { color: var(--accent);  border-color: rgba(232,255,71,0.25); }
+.status-badge.ok  .status-dot { background: var(--accent); }
+.status-badge.err { color: #ff5555; border-color: rgba(255,85,85,0.25); }
+.status-badge.err .status-dot { background: #ff5555; }
+.status-badge.loading { color: var(--accent2); border-color: rgba(255,107,255,0.25); }
+.status-badge.loading .status-dot { background: var(--accent2); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+/* ── Main grid ── */
+.main {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 14px;
+  flex: 1;
+  overflow: hidden;
+  padding: 13px 16px;
+  transition: grid-template-columns 0.28s cubic-bezier(0.4,0,0.2,1),
+              gap 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+.main.panel-collapsed {
+  grid-template-columns: 1fr 0px;
+  gap: 0;
+}
+
+/* Panel collapses smoothly; min-width:0 lets the grid squish it to 0 */
+.panel {
+  min-width: 0;
+  transition: opacity 0.18s ease;
+}
+.main.panel-collapsed .panel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Panel toggle button in header */
+.panel-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s;
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
+}
+.panel-toggle-btn:hover {
+  border-color: rgba(232,255,71,0.35);
+  color: var(--accent);
+}
+.panel-toggle-btn.collapsed {
+  background: rgba(232,255,71,0.07);
+  border-color: rgba(232,255,71,0.25);
+  color: var(--accent);
+}
+
+/* ── Video side ── */
+.video-side {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.video-wrapper {
+  position: relative;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 16/9;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+.video-wrapper #ytPlayer,
+.video-wrapper iframe { width: 100%; height: 100%; display: block; }
+
+.video-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  width: 100%; height: 100%;
+  color: var(--muted);
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+}
+.video-placeholder .icon { font-size: 40px; opacity: 0.2; }
+
+/* ── Cinematic 3-line overlay ── */
+.lyrics-overlay {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 65px 28px 20px;
+  background: linear-gradient(transparent 0%, rgba(0,0,0,0.5) 28%, rgba(0,0,0,0.93) 100%);
+  display: none;
+  z-index: 10;
+  pointer-events: none;
+}
+.lyrics-overlay.visible { display: block; }
+
+/* Previous line */
+.overlay-prev {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: rgba(255,255,255,0.26);
+  margin-bottom: 5px;
+  min-height: 19px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.2px;
+}
+
+/* Current line: word-by-word highlight */
+/* Each word is a mini dual-layer: dim base + bright fill that wipes L→R */
+.overlay-current-wrap {
+  min-height: 50px;
+  margin-bottom: 7px;
+  line-height: 1.15;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.overlay-word-wrap {
+  position: relative;
+  display: inline-block;
+  margin-right: 0.3em;
+}
+
+.overlay-word-base {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: var(--lyric-size);
+  letter-spacing: 1.5px;
+  color: rgba(255,255,255,0.18);
+  text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+  white-space: nowrap;
+  display: block;
+}
+
+.overlay-word-fill {
+  position: absolute;
+  top: 0; left: 0;
+  overflow: hidden;
+  width: 0%;
+  white-space: nowrap;
+  color: var(--lyric-color);
+  /* Brighter bloom + hard shadow so the lit text pops against the dim base */
+  text-shadow:
+    0 0 40px rgba(255,255,255,0.65),
+    0 0 12px rgba(255,255,255,0.30),
+    0 2px 14px rgba(0,0,0,0.95);
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: var(--lyric-size);
+  letter-spacing: 1.5px;
+  display: block;
+  transition: width 55ms linear;
+}
+
+/* Scan-line glow: a thin bright bar that rides the fill frontier.
+   Driven by --fill-x CSS variable set each tick in updateKaraokeWipe.
+   Shown only while a word is mid-wipe (.wiping class). */
+.overlay-word-wrap::after {
+  content: '';
+  position: absolute;
+  top: 8%; bottom: 8%;
+  width: 3px;
+  border-radius: 2px;
+  left: var(--fill-x, 0%);
+  transform: translateX(-50%);
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 0 10px 6px rgba(255,255,255,0.40);
+  opacity: 0;
+  /* Match fill transition so the bar tracks exactly */
+  transition: left 55ms linear, opacity 0.08s;
+  z-index: 5;
+  pointer-events: none;
+}
+.overlay-word-wrap.wiping::after { opacity: 1; }
+
+/* Word-complete flash: quick brightness burst when a word finishes */
+@keyframes wordFlash {
+  0%   { filter: brightness(1); }
+  20%  { filter: brightness(1.85) drop-shadow(0 0 7px rgba(255,255,255,0.7)); }
+  100% { filter: brightness(1); }
+}
+.overlay-word-wrap.word-complete .overlay-word-fill {
+  animation: wordFlash 0.38s ease-out both;
+}
+
+/* Multi-syllable word group — syllables sit flush together, gap after the group */
+.overlay-syl-group {
+  display: inline-flex;
+  align-items: baseline;
+  margin-right: 0.3em;
+}
+.overlay-syl-group .overlay-word-wrap {
+  margin-right: 0;   /* no gap between syllables of the same word */
+}
+
+/* Line entry: new current line slides up and fades in */
+@keyframes lyricLineIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.overlay-current-wrap.entering {
+  animation: lyricLineIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Next line — visible "preview" using same font as current */
+.overlay-next {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 26px;
+  letter-spacing: 1.5px;
+  color: rgba(255,255,255,0.36);
+  text-shadow: 0 2px 10px rgba(0,0,0,0.7);
+  min-height: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+/* Next-next line — distant, very small */
+.overlay-next2 {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.14);
+  min-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.2px;
+  margin-top: 3px;
+}
+
+/* Fullscreen button */
+.fullscreen-btn {
+  position: absolute;
+  top: 9px; right: 9px;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.6);
+  border-radius: 6px;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+}
+.video-wrapper:hover .fullscreen-btn { opacity: 1; pointer-events: auto; }
+.fullscreen-btn:hover { background: rgba(0,0,0,0.75); color: white; }
+
+/* Song info */
+.song-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.song-icon { color: var(--accent2); font-size: 13px; }
+#songTitle { font-weight: 500; }
+
+/* ── Panel ── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.panel-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.tab {
+  flex: 1;
+  padding: 11px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: center;
+  border: none;
+  background: transparent;
+  transition: color 0.2s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab:hover:not(.active) { color: var(--text); }
+
+/* Tab visibility — each tab type gets its own display mode when active */
+.tab-content { display: none; }
+#tab-lyrics.active   { display: block; }
+#tab-queue.active    { display: flex; flex-direction: column; }
+#tab-controls.active { display: flex; flex-direction: column; }
+
+/* ── Lyrics panel ── */
+#tab-lyrics {
+  flex: 1;
+  overflow-y: auto;
+  padding: 9px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  min-height: 0;
+}
+
+.lyric-line {
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.18s;
+  margin-bottom: 1px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.lyric-line:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.lyric-line.active {
+  background: rgba(232,255,71,0.07);
+  color: var(--accent);
+  font-weight: 500;
+}
+.lyric-line .ts {
+  font-size: 9px;
+  color: var(--muted);
+  opacity: 0.45;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  font-weight: 400;
+}
+.lyric-text { flex: 1; }
+
+/* ── Queue panel ── */
+#tab-queue {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.queue-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 7px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  min-height: 0;
+}
+
+.queue-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 20px;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  height: 100%;
+}
+.queue-empty .icon { font-size: 34px; opacity: 0.2; }
+.queue-empty p { line-height: 1.6; }
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.18s;
+}
+.queue-item:hover { background: rgba(255,255,255,0.04); }
+.queue-item.current {
+  background: rgba(232,255,71,0.05);
+  border-color: rgba(232,255,71,0.18);
+}
+
+.queue-num {
+  font-size: 11px; color: var(--muted);
+  width: 16px; text-align: center;
+  flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+.queue-play-icon { display: none; color: var(--accent); font-size: 11px; width: 16px; text-align: center; flex-shrink: 0; }
+.queue-item.current .queue-num { display: none; }
+.queue-item.current .queue-play-icon { display: block; }
+
+.queue-thumb {
+  width: 50px; height: 36px;
+  border-radius: 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.queue-info { flex: 1; min-width: 0; }
+.queue-title {
+  font-size: 12px; font-weight: 500;
+  color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.queue-item.current .queue-title { color: var(--accent); }
+.queue-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+.queue-del {
+  background: transparent; border: none;
+  color: var(--muted); cursor: pointer;
+  font-size: 14px; padding: 3px 5px;
+  border-radius: 4px; transition: all 0.18s;
+  flex-shrink: 0; opacity: 0;
+}
+.queue-item:hover .queue-del { opacity: 1; }
+.queue-del:hover { color: #ff5555; background: rgba(255,85,85,0.1); }
+
+.queue-footer {
+  padding: 9px 11px;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+}
+.queue-count { font-size: 11px; color: var(--muted); flex: 1; }
+.clear-queue-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px; padding: 5px 10px;
+  font-size: 11px; cursor: pointer;
+  transition: all 0.18s;
+}
+.clear-queue-btn:hover { border-color: #ff5555; color: #ff5555; }
+
+/* ── Controls panel ── */
+#tab-controls {
+  padding: 15px; gap: 18px;
+  overflow-y: auto; flex: 1; min-height: 0;
+}
+
+.ctrl-group label {
+  display: block; font-size: 10px;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 10px;
+}
+.ctrl-group .val {
+  float: right; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-transform: none; letter-spacing: 0;
+}
+
+input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+
+.color-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.swatch {
+  width: 30px; height: 30px; border-radius: 7px;
+  border: 2px solid transparent; cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.swatch:hover { transform: scale(1.12); }
+.swatch.active { border-color: white; transform: scale(1.05); }
+
+.mode-btns { display: flex; gap: 8px; }
+.mode-btn {
+  flex: 1; padding: 9px; border-radius: 7px;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--muted);
+  font-family: 'DM Sans', sans-serif; font-size: 12px;
+  cursor: pointer; transition: all 0.18s;
+}
+.mode-btn.active {
+  background: rgba(232,255,71,0.09);
+  border-color: rgba(232,255,71,0.35);
+  color: var(--accent);
+}
+
+/* ── Empty / loading states ── */
+.empty-state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 100%; gap: 10px;
+  color: var(--muted); text-align: center; padding: 28px;
+}
+.empty-icon { font-size: 36px; opacity: 0.2; }
+.empty-state p { font-size: 13px; line-height: 1.6; }
+
+.spinner {
+  width: 22px; height: 22px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin: 0 auto 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Fullscreen overlay adjustments ── */
+/* ── Player error overlay ── */
+.player-error-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  padding: 24px;
+  text-align: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.player-error-icon { font-size: 36px; }
+.player-error-msg  { font-size: 14px; font-weight: 600; color: #ff7070; line-height: 1.4; }
+.player-error-hint { font-size: 12px; color: var(--muted); line-height: 1.5; max-width: 300px; }
+
+/* ── File protocol warning banner ── */
+.protocol-warning {
+  background: rgba(255,153,0,0.08);
+  border-bottom: 1px solid rgba(255,153,0,0.25);
+  padding: 6px 22px;
+  font-size: 12px;
+  color: #ffaa44;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.protocol-warning.show { display: flex; }
+.protocol-warning strong { font-weight: 600; }
+.protocol-warning code {
+  background: rgba(255,153,0,0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.video-wrapper:fullscreen .lyrics-overlay { padding: 100px 48px 36px; }
+.video-wrapper:fullscreen .overlay-word-base,
+.video-wrapper:fullscreen .overlay-word-fill { font-size: calc(var(--lyric-size) * 1.35); }
+.video-wrapper:fullscreen .overlay-prev { font-size: 14px; }
+.video-wrapper:fullscreen .overlay-next { font-size: calc(26px * 1.35); }
+.video-wrapper:fullscreen .overlay-next2 { font-size: 16px; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo">KaraokeMode <span>BETA</span></div>
+  <div class="url-form">
+    <input type="text" class="url-input" id="urlInput" placeholder="Paste a YouTube URL or video ID…" />
+    <button class="url-btn" id="loadBtn">PLAY</button>
+    <button class="queue-add-btn" id="queueBtn">+ Queue</button>
+  </div>
+  <div id="statusBadge" class="status-badge">
+    <div class="status-dot"></div>
+    <span id="statusText">Ready</span>
+  </div>
+  <button class="panel-toggle-btn" id="panelToggleBtn" title="Hide panel">
+    <!-- sidebar icon: rectangle with right-panel column -->
+    <svg width="15" height="13" viewBox="0 0 15 13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+      <rect x="0.65" y="0.65" width="13.7" height="11.7" rx="2"/>
+      <line x1="10" y1="0.65" x2="10" y2="12.35"/>
+    </svg>
+  </button>
+</header>
+
+<!-- File:// protocol warning (shown by JS if needed) -->
+<div class="protocol-warning" id="protocolWarning">
+  ⚠️ <strong>YouTube won't load from a local file.</strong>
+  Double-click <code>start-karaoke.command</code> in the same folder to launch properly —
+  or run <code>python3 -m http.server 8081</code> in that folder and open
+  <code>localhost:8081/karaoke-app-revise.html</code> in Chrome.
+</div>
+
+<!-- ── Main ── -->
+<div class="main">
+
+  <!-- Left: Video -->
+  <div class="video-side">
+    <div class="video-wrapper" id="videoWrapper">
+
+      <div class="video-placeholder" id="videoPlaceholder">
+        <div class="icon">🎤</div>
+        <span>Paste a YouTube URL above to get started</span>
+      </div>
+
+      <!-- 4-line cinematic overlay -->
+      <div class="lyrics-overlay" id="lyricsOverlay">
+        <div class="overlay-prev" id="overlayPrev"></div>
+        <div class="overlay-current-wrap" id="overlayCurrent"></div>
+        <div class="overlay-next" id="overlayNext"></div>
+        <div class="overlay-next2" id="overlayNext2"></div>
+      </div>
+
+      <button class="fullscreen-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
+    </div>
+
+    <div id="statusRow" style="display:none">
+      <div class="song-info-bar">
+        <span class="song-icon">♫</span>
+        <span id="songTitle">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Panel -->
+  <div class="panel">
+    <div class="panel-tabs">
+      <button class="tab active" data-tab="lyrics">Lyrics</button>
+      <button class="tab" data-tab="queue">Queue</button>
+      <button class="tab" data-tab="controls">Controls</button>
+    </div>
+
+    <!-- Lyrics tab -->
+    <div id="tab-lyrics" class="tab-content active">
+      <div class="empty-state">
+        <div class="empty-icon">🎵</div>
+        <p>Load a song and lyrics will<br>scroll here in sync</p>
+      </div>
+    </div>
+
+    <!-- Queue tab -->
+    <div id="tab-queue" class="tab-content">
+      <div class="queue-list" id="queueList">
+        <div class="queue-empty">
+          <div class="icon">📋</div>
+          <p>Queue is empty.<br>Add songs with "+ Queue" above.</p>
+        </div>
+      </div>
+      <div class="queue-footer" id="queueFooter" style="display:none">
+        <span class="queue-count" id="queueCount">0 songs</span>
+        <button class="clear-queue-btn" id="clearQueueBtn">Clear all</button>
+      </div>
+    </div>
+
+    <!-- Controls tab -->
+    <div id="tab-controls" class="tab-content">
+
+      <div class="ctrl-group">
+        <label>Display Mode</label>
+        <div class="mode-btns">
+          <button class="mode-btn active" data-mode="karaoke">🎤 Karaoke</button>
+          <button class="mode-btn" data-mode="classic">Classic</button>
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <label>Sync Offset <span class="val" id="offsetVal">0.0s</span></label>
+        <input type="range" id="offsetSlider" min="-10" max="10" step="0.1" value="0">
+      </div>
+
+      <div class="ctrl-group">
+        <label>Overlay Text Size <span class="val" id="sizeVal">38px</span></label>
+        <input type="range" id="sizeSlider" min="20" max="72" step="2" value="38">
+      </div>
+
+      <div class="ctrl-group">
+        <label>Lyric Color</label>
+        <div class="color-swatches">
+          <div class="swatch active" data-color="#ffffff" style="background:#ffffff"></div>
+          <div class="swatch" data-color="#e8ff47" style="background:#e8ff47"></div>
+          <div class="swatch" data-color="#ff6bff" style="background:#ff6bff"></div>
+          <div class="swatch" data-color="#00ffcc" style="background:#00ffcc"></div>
+          <div class="swatch" data-color="#ff9966" style="background:#ff9966"></div>
+          <div class="swatch" data-color="#66aaff" style="background:#66aaff"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+//  State
+// ══════════════════════════════════════════════════════════════════
+let player       = null;
+let lyrics       = [];        // [{time: float, text: string}]
+let currentIndex = -1;
+let syncOffset   = 0;
+let pollTimer    = null;
+let displayMode  = 'karaoke';
+let currentVideoId = null;    // tracks loaded video to detect changes (BUG FIX)
+
+// Queue
+let queue      = [];          // [{id, title, thumb}]
+let queueIndex = -1;
+
+// ══════════════════════════════════════════════════════════════════
+//  YouTube IFrame API bootstrap
+// ══════════════════════════════════════════════════════════════════
+const ytScript = document.createElement('script');
+ytScript.src   = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(ytScript);
+window.onYouTubeIframeAPIReady = () => { /* API ready — waiting for user input */ };
+
+// Show file:// warning if not served over HTTP
+if (location.protocol === 'file:') {
+  document.getElementById('protocolWarning').classList.add('show');
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Video ID extraction
+// ══════════════════════════════════════════════════════════════════
+function extractVideoId(input) {
+  input = input.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+  try {
+    const url = new URL(input.startsWith('http') ? input : 'https://' + input);
+    if (url.hostname.includes('youtu.be'))    return url.pathname.slice(1).split('?')[0];
+    if (url.hostname.includes('youtube.com')) return url.searchParams.get('v') || url.pathname.split('/').pop();
+  } catch(e) {}
+  const m = input.match(/(?:v=|\/embed\/|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Title sanitization for lyric search
+// ══════════════════════════════════════════════════════════════════
+function sanitizeTitle(raw) {
+  return raw
+    .replace(/\(.*?(official|video|audio|lyric|hd|4k|mv|music.video|feat|ft\.?|remix|ver\.|version|live|cover|topic).*?\)/gi, '')
+    .replace(/\[.*?(official|video|audio|lyric|hd|4k|mv|music.video|feat|ft\.?|remix|ver\.|version|live|cover|topic).*?\]/gi, '')
+    .replace(/[-|]\s*(official|lyrics?|video|audio|hd|4k|mv|vevo|topic|feat\.?|ft\.?)(\s|$)/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Kugou KRC lyrics — word-level timestamps via local proxy
+//
+//  KRC format (after decryption on the server):
+//    [line_start_ms,line_dur_ms]<word_off_ms,word_dur_ms,0>word …
+//
+//  The server at /api/kugou/* handles search + decryption so the
+//  browser never has to deal with Kugou's SSL quirks or XOR cipher.
+//
+//  Returns the parsed lines array with ._song / ._singer metadata
+//  attached, or null on failure. Does NOT touch the UI.
+// ══════════════════════════════════════════════════════════════════
+async function fetchKugouLyricsRaw(artist, track) {
+  const q = [artist, track].filter(Boolean).join(' ');
+  if (!q) return null;
+  const sres  = await fetch(`/api/kugou/search?q=${encodeURIComponent(q)}`);
+  const sdata = await sres.json();
+  if (!sdata.id) return null;
+
+  const lres  = await fetch(`/api/kugou/lyrics?id=${sdata.id}&ak=${sdata.accesskey}`);
+  const ldata = await lres.json();
+  if (!ldata.krc) return null;
+
+  const parsed = parseKRC(ldata.krc);
+  if (!parsed.length) return null;
+
+  // Attach metadata for UI display after fusion decision is made
+  parsed._song   = sdata.song   || '';
+  parsed._singer = sdata.singer || '';
+  return parsed;
+}
+
+// ── lrclib.net (line-level, YouTube-accurate) ─────────────────────
+// Returns { lines, synced, artist, track } or null.
+async function fetchLrclibRaw(track, artist, duration) {
+  const params = new URLSearchParams({ track_name: track });
+  if (artist)   params.set('artist_name', artist);
+  if (duration) params.set('duration', Math.round(duration));
+  const res  = await fetch(`https://lrclib.net/api/search?${params}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (!data.length) return null;
+  const entry = data.find(r => r.syncedLyrics) || data[0];
+  if (!entry) return null;
+  let lines, synced = false;
+  if (entry.syncedLyrics) {
+    lines  = parseLrc(entry.syncedLyrics);
+    synced = true;
+  } else if (entry.plainLyrics) {
+    lines = parsePlain(entry.plainLyrics);
+  } else {
+    return null;
+  }
+  return {
+    lines,
+    synced,
+    artist: entry.artistName || artist || '',
+    track:  entry.trackName  || track  || '',
+  };
+}
+
+// ── Jaccard token-overlap similarity (0.0 – 1.0) ──────────────────
+function textSimilarity(a, b) {
+  const tok = s => new Set(
+    s.toLowerCase().replace(/[^a-z0-9 ]/g, '').split(/\s+/).filter(Boolean)
+  );
+  const ta = tok(a), tb = tok(b);
+  let inter = 0;
+  ta.forEach(t => { if (tb.has(t)) inter++; });
+  const union = ta.size + tb.size - inter;
+  return union ? inter / union : 0;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Timestamp fusion
+//
+//  Problem: Kugou KRC timestamps are calibrated to Kugou's own audio
+//  master, which may differ from the YouTube video's audio by up to
+//  several seconds (intro length, edit cuts, etc.).
+//
+//  Solution: Use lrclib's line timestamps as absolute anchors —
+//  lrclib syncs to streaming masters (Spotify/Apple Music) which
+//  match the YouTube audio — then remap Kugou's per-word offsets
+//  relative to each matched Kugou line start.
+//
+//  Word time = lrclib_line_start + (kugou_word_time − kugou_line_start)
+//
+//  For each lrclib line we do a text-similarity search across Kugou
+//  lines within a ±30 s window and accept the best match above 0.30.
+//  Lines without a good match fall back to syllable-weighted Mode B.
+// ══════════════════════════════════════════════════════════════════
+function fuseTimestamps(lrclibLines, kugouLines) {
+  // Pre-compute a global offset estimate by comparing timestamps of
+  // the best-matched lines — lets us handle songs where Kugou's master
+  // starts several seconds earlier or later than the YouTube video.
+  let offsetSum = 0, offsetCount = 0;
+  for (const lrcLine of lrclibLines.slice(0, 20)) {
+    let topScore = 0.45, topKLine = null;
+    for (const kLine of kugouLines) {
+      const sc = textSimilarity(lrcLine.text, kLine.text);
+      if (sc > topScore) { topScore = sc; topKLine = kLine; }
+    }
+    if (topKLine) {
+      offsetSum   += lrcLine.time - topKLine.time;
+      offsetCount += 1;
+    }
+  }
+  // Estimated shift: positive means Kugou runs "earlier" than YouTube
+  const globalOffset = offsetCount >= 2 ? offsetSum / offsetCount : 0;
+
+  return lrclibLines.map(lrcLine => {
+    let bestScore = 0.30;
+    let bestLine  = null;
+
+    for (const kLine of kugouLines) {
+      // Apply global offset correction to the window check
+      const adjustedKTime = kLine.time + globalOffset;
+      if (Math.abs(adjustedKTime - lrcLine.time) > 20) continue;
+      const sc = textSimilarity(lrcLine.text, kLine.text);
+      if (sc > bestScore) { bestScore = sc; bestLine = kLine; }
+    }
+
+    // Fallback: broaden window to ±60 s if nothing matched in narrow window
+    if (!bestLine) {
+      for (const kLine of kugouLines) {
+        const adjustedKTime = kLine.time + globalOffset;
+        if (Math.abs(adjustedKTime - lrcLine.time) > 60) continue;
+        const sc = textSimilarity(lrcLine.text, kLine.text);
+        if (sc > bestScore) { bestScore = sc; bestLine = kLine; }
+      }
+    }
+
+    if (!bestLine || !bestLine.words || !bestLine.words.length) {
+      return lrcLine;   // no match — keep lrclib line (syllable fallback)
+    }
+
+    const kBase = bestLine.time;   // Kugou's absolute line start (discarded)
+    const words = bestLine.words.map(w => ({
+      text:    w.text,
+      time:    lrcLine.time + (w.time    - kBase),   // anchored to lrclib
+      endTime: lrcLine.time + (w.endTime - kBase),
+    }));
+
+    return {
+      time:  lrcLine.time,   // lrclib's YouTube-accurate anchor
+      text:  lrcLine.text,
+      words,
+    };
+  });
+}
+
+// Parse decrypted KRC text into our standard lyrics[] format.
+// Each line object: { time, text, words: [{time, text}, …] }
+function parseKRC(krc) {
+  const lines = [];
+  // Match lyric lines: [start_ms,dur_ms]<off,dur,0>word…
+  const lineRe = /\[(\d+),(\d+)\]((?:<\d+,\d+,\d+>[^[<]*)+)/g;
+  const wordRe = /<(\d+),(\d+),\d+>([^<[]*)/g;
+  let lm;
+  while ((lm = lineRe.exec(krc)) !== null) {
+    const lineStart = parseInt(lm[1]) / 1000;   // ms → seconds
+    const content   = lm[3];
+    const words = [];
+    let wm;
+    wordRe.lastIndex = 0;
+    while ((wm = wordRe.exec(content)) !== null) {
+      const wordOff  = parseInt(wm[1]) / 1000;
+      const wordDur  = parseInt(wm[2]) / 1000;
+      const wordText = wm[3].replace(/\s+$/, '').trim();
+      if (wordText) words.push({
+        time:    lineStart + wordOff,
+        endTime: lineStart + wordOff + wordDur,
+        text:    wordText,
+      });
+    }
+    if (!words.length) continue;
+    const text = words.map(w => w.text).join(' ');
+    lines.push({ time: lineStart, text, words });
+  }
+  return lines.sort((a, b) => a.time - b.time);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Fetch lyrics — three-tier strategy
+//
+//  1. Fetch Kugou (word-level) + lrclib (line-level) in parallel.
+//  2. If both arrive → FUSE: lrclib anchors + Kugou word offsets
+//     → best possible timing accuracy.
+//  3. If only Kugou → use directly (word-synced, but may be slightly
+//     offset vs YouTube audio on some tracks).
+//  4. If only lrclib → use line timestamps with syllable fallback.
+//  5. Nothing found → error state.
+// ══════════════════════════════════════════════════════════════════
+async function fetchLyrics(title, duration) {
+  setStatus('loading', 'Finding lyrics…');
+
+  const clean = sanitizeTitle(title);
+  let queryArtist = '';
+  let queryTitle  = clean;
+
+  // Split "Artist — Title" patterns from video titles
+  const dash = clean.match(/^(.+?)\s[-–]\s(.+)$/);
+  if (dash) { queryArtist = dash[1].trim(); queryTitle = dash[2].trim(); }
+
+  // Fetch both sources simultaneously — no serial waiting
+  const [kugouResult, lrclibResult] = await Promise.allSettled([
+    fetchKugouLyricsRaw(queryArtist, queryTitle),
+    fetchLrclibRaw(queryTitle, queryArtist, duration),
+  ]);
+
+  const kugou  = kugouResult.status  === 'fulfilled' ? kugouResult.value  : null;
+  const lrclib = lrclibResult.status === 'fulfilled' ? lrclibResult.value : null;
+
+  // ── Tier 1: Fused (best accuracy) ─────────────────────────────
+  if (kugou && kugou.length && lrclib && lrclib.lines && lrclib.lines.length && lrclib.synced) {
+    const fused = fuseTimestamps(lrclib.lines, kugou);
+    const wordLineCount = fused.filter(l => l.words && l.words.length).length;
+    // Only use fusion if we matched a meaningful fraction of lines
+    if (wordLineCount >= Math.min(3, fused.length * 0.4)) {
+      document.getElementById('songTitle').textContent =
+        `${lrclib.artist} — ${lrclib.track}`;
+      document.getElementById('statusRow').style.display = 'flex';
+      setStatus('ok', `Word-synced ✦ Fused (${wordLineCount}/${fused.length} lines)`);
+      return fused;
+    }
+  }
+
+  // ── Tier 2: Kugou only (word-level, Kugou-calibrated) ─────────
+  if (kugou && kugou.length) {
+    if (kugou._song && kugou._singer) {
+      document.getElementById('songTitle').textContent =
+        `${kugou._singer} — ${kugou._song}`;
+      document.getElementById('statusRow').style.display = 'flex';
+    }
+    setStatus('ok', 'Word-synced ✦ Kugou');
+    return kugou;
+  }
+
+  // ── Tier 3: lrclib only (line-level + syllable estimate) ──────
+  if (lrclib && lrclib.lines && lrclib.lines.length) {
+    document.getElementById('songTitle').textContent =
+      `${lrclib.artist} — ${lrclib.track}`;
+    document.getElementById('statusRow').style.display = 'flex';
+    setStatus('ok', lrclib.synced ? 'Line-synced (lrclib)' : 'Plain lyrics (no sync)');
+    return lrclib.lines;
+  }
+
+  // ── Nothing found ──────────────────────────────────────────────
+  setStatus('err', 'Lyrics not found');
+  showPanel('empty', 'No lyrics found for this song.');
+  return [];
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  LRC / plain text parsing
+// ══════════════════════════════════════════════════════════════════
+function parseLrc(lrc) {
+  const lines  = [];
+  const re     = /\[(\d+):(\d+\.\d+)\](.*)/g;
+  let m;
+  while ((m = re.exec(lrc)) !== null) {
+    const lineTime = parseInt(m[1]) * 60 + parseFloat(m[2]);
+    const content  = m[3];
+    if (!content.trim()) continue;
+
+    if (content.includes('<')) {
+      // ── Enhanced LRC: inline per-word timestamps ──────────────────
+      // Format: <mm:ss.xx>word1 <mm:ss.xx>word2 …
+      const wordRe = /<(\d+):(\d+\.\d+)>([^<\[]*)/g;
+      const words  = [];
+      let wm;
+      while ((wm = wordRe.exec(content)) !== null) {
+        const wordTime = parseInt(wm[1]) * 60 + parseFloat(wm[2]);
+        const wordText = wm[3].replace(/\s+$/, '');   // keep leading space for join
+        const trimmed  = wordText.trim();
+        if (trimmed) words.push({ time: wordTime, text: trimmed });
+      }
+      if (words.length) {
+        const plainText = words.map(w => w.text).join(' ');
+        lines.push({ time: lineTime, text: plainText, words });
+      }
+    } else {
+      // ── Standard LRC: line-level timestamp only ───────────────────
+      const text = content.trim();
+      if (text) lines.push({ time: lineTime, text, words: null });
+    }
+  }
+  return lines.sort((a, b) => a.time - b.time);
+}
+
+function parsePlain(plain) {
+  return plain.split('\n').filter(l => l.trim()).map((text, i) => ({
+    time: i * 3,
+    text: text.trim()
+  }));
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Video loading
+// ══════════════════════════════════════════════════════════════════
+function loadVideo(videoId) {
+  const placeholder = document.getElementById('videoPlaceholder');
+  if (placeholder) placeholder.style.display = 'none';
+
+  // Clear any previous error overlay and restore iframe visibility
+  const prevErr = document.querySelector('.player-error-overlay');
+  if (prevErr) prevErr.remove();
+  const ytFrame = document.getElementById('ytPlayer');
+  if (ytFrame) ytFrame.style.visibility = 'visible';
+
+  if (player && typeof player.loadVideoById === 'function') {
+    // BUG FIX: reuse existing player — onPlayerState(PLAYING) detects
+    // video ID change and re-fetches lyrics automatically
+    player.loadVideoById(videoId);
+  } else {
+    // First load: inject player div and create YT.Player instance
+    const div = document.createElement('div');
+    div.id = 'ytPlayer';
+    const wrapper = document.getElementById('videoWrapper');
+    wrapper.insertBefore(div, wrapper.firstChild);
+
+    player = new YT.Player('ytPlayer', {
+      videoId,
+      playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1, enablejsapi: 1, origin: window.location.origin },
+      events: { onStateChange: onPlayerState, onError: onPlayerError }
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Player state handler
+//
+//  BUG FIX: The original code used onPlayerReady to fetch lyrics,
+//  but onPlayerReady fires only once (on initial load). Subsequent
+//  calls to loadVideoById() never triggered new lyric fetches.
+//
+//  Fix: track currentVideoId and re-fetch whenever PLAYING fires
+//  with a different video_id.
+// ══════════════════════════════════════════════════════════════════
+async function onPlayerState(e) {
+  if (e.data === YT.PlayerState.PLAYING) {
+    const info = player.getVideoData();
+    const vid  = info.video_id;
+
+    if (vid && vid !== currentVideoId) {
+      // New video — reset and fetch fresh lyrics
+      currentVideoId = vid;
+      stopSync();
+      lyrics       = [];
+      currentIndex = -1;
+      document.getElementById('statusRow').style.display = 'none';
+      clearOverlay();
+      showPanel('loading');
+
+      lyrics = await fetchLyrics(info.title || '', player.getDuration());
+
+      if (lyrics.length) {
+        renderLyricsPanel();
+        if (displayMode === 'karaoke') {
+          document.getElementById('lyricsOverlay').classList.add('visible');
+        }
+        setStatus('ok', `${lyrics.length} lines synced`);
+      }
+    }
+
+    startSync();
+
+  } else if (e.data === YT.PlayerState.ENDED) {
+    stopSync();
+    playNextInQueue();
+  } else if (e.data === YT.PlayerState.PAUSED) {
+    stopSync();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Player error handler
+//  Error 101/150/153 = video owner disabled embedding.
+//  The app catches it and shows a friendly message instead of
+//  YouTube's raw "Error 153" UI.
+// ══════════════════════════════════════════════════════════════════
+function onPlayerError(e) {
+  const embedBlocked = [101, 150, 151, 153];
+  let msg;
+  if (embedBlocked.includes(e.data)) {
+    msg = 'This video has embedding disabled — try a different upload or the official audio';
+  } else if (e.data === 100) {
+    msg = 'Video not found or is private';
+  } else if (e.data === 2) {
+    msg = 'Invalid video ID';
+  } else {
+    msg = `Player error (code ${e.data})`;
+  }
+  setStatus('err', msg);
+  stopSync();
+  // Hide the iframe so YouTube's error UI can't bleed through
+  const ytFrame = document.getElementById('ytPlayer');
+  if (ytFrame) ytFrame.style.visibility = 'hidden';
+
+  // Show a friendly overlay instead of the YouTube error screen
+  const wrapper = document.getElementById('videoWrapper');
+  let errDiv = wrapper.querySelector('.player-error-overlay');
+  if (!errDiv) {
+    errDiv = document.createElement('div');
+    errDiv.className = 'player-error-overlay';
+    wrapper.appendChild(errDiv);
+  }
+  errDiv.innerHTML = `
+    <div class="player-error-icon">⚠️</div>
+    <div class="player-error-msg">${msg}</div>
+    <div class="player-error-hint">Try searching YouTube for the official audio version, which is usually embeddable.</div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Sync engine
+//
+//  Polls YouTube's getCurrentTime() every 50ms directly — no
+//  interpolation, no drift. A CSS transition on the fill element
+//  smooths the wipe between polls so it doesn't stutter.
+// ══════════════════════════════════════════════════════════════════
+function startSync() {
+  stopSync();
+  tick();                                  // immediate first frame
+  pollTimer = setInterval(tick, 50);
+}
+
+function stopSync() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function tick() {
+  if (!player || !player.getCurrentTime) return;
+  const t   = player.getCurrentTime() + syncOffset;
+  const idx = getActiveIndex(t);
+
+  if (idx !== currentIndex) {
+    currentIndex = idx;
+    highlightLine(idx);
+    updateOverlay(idx);
+  }
+
+  // Drive the karaoke wipe — pass absolute player time so
+  // updateKaraokeWipe can use real word timestamps when available.
+  if (idx >= 0 && lyrics[idx]) {
+    updateKaraokeWipe(t, idx);
+  }
+}
+
+function getActiveIndex(t) {
+  let idx = -1;
+  for (let i = 0; i < lyrics.length; i++) {
+    if (lyrics[i].time <= t) idx = i;
+    else break;
+  }
+  return idx;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Syllable counter (English heuristic)
+//
+//  Estimates how many syllables a word contains by counting vowel
+//  groups then adjusting for common silent endings. Syllables map
+//  much more closely to singing duration than raw character length:
+//  "through" → 1 syl (7 chars), "every" → 3 syl (5 chars).
+// ══════════════════════════════════════════════════════════════════
+function countSyllables(word) {
+  const w = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (!w || w.length <= 2) return 1;
+
+  // Count groups of consecutive vowels
+  let n = (w.match(/[aeiouy]+/gi) || []).length;
+
+  // Consonant + le  = spoken syllable (trou-ble, peo-ple, lit-tle).
+  // Vowel + le      = silent e       (smile, while, stale).
+  const spokenLE = /[^aeiouy]le$/i.test(w);
+  // Silent -e at end — skip if it's a consonant+le pair
+  if (!spokenLE && /[^aeiouy]e$/i.test(w))             n--;
+  // Silent -ed        (but keep: -ted, -ded)
+  if (/[^td]ed$/i.test(w))                            n--;
+  // Silent -es        (but keep: -ses, -zes, -ces, -xes, -ges, -shes, -ches)
+  if (/[^szxcg]es$/i.test(w) && !/[sc]hes$/i.test(w)) n--;
+
+  return Math.max(1, n);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  syllabify — split a word into its visual karaoke syllable units
+//
+//  Traditional CDG karaoke machines have per-syllable color-change
+//  timestamps. We replicate that by splitting each word into its
+//  phonetic syllables so the wipe advances syllable-by-syllable
+//  instead of sweeping the whole word in one go.
+//
+//  Algorithm:
+//   1. Locate every vowel group (run of consecutive vowels).
+//   2. For each gap of consonants between adjacent vowel groups,
+//      decide where to break:
+//        gap 0   → split between the touching vowel groups
+//        gap 1   → V | CV  (onset consonant goes with next vowel)
+//        gap ≥ 2 → check if the last 1-2 consonants form a legal
+//                  English onset cluster (br, pl, th, ch, …);
+//                  if so keep them with the next vowel, otherwise
+//                  split in the middle.
+//   3. Map break positions back to the original (cased) string.
+//
+//  Examples:
+//    "beautiful"  → ["beau","ti","ful"]
+//    "running"    → ["run","ning"]
+//    "people"     → ["peo","ple"]
+//    "together"   → ["to","ge","ther"]
+//    "amazing"    → ["a","ma","zing"]
+//    "through"    → ["through"]       (single syllable — no split)
+// ══════════════════════════════════════════════════════════════════
+function syllabify(word) {
+  const count = countSyllables(word);
+  if (count <= 1) return [word];
+
+  // Strip to letters-only for pattern matching (preserve apostrophes)
+  const raw = word.replace(/[^a-zA-Z']/g, '');
+  const w   = raw.toLowerCase();
+  if (w.length <= count) return [word];   // can't split sensibly
+
+  // Legal English onset clusters: kept together with the following vowel
+  const onsets = new Set([
+    'bl','br','cl','cr','dr','dw','fl','fr','gl','gr',
+    'pl','pr','sc','sk','sl','sm','sn','sp','st','sw',
+    'tr','tw','th','ch','sh','ph','wh','wr','kn','gn',
+    'str','spr','scr','spl','shr','thr',              // 3-char onsets
+  ]);
+
+  // Locate every vowel-group span [start, end) in `w`
+  const vSpans = [];
+  let i = 0;
+  while (i < w.length) {
+    if (/[aeiouy]/.test(w[i])) {
+      const s = i;
+      while (i < w.length && /[aeiouy]/.test(w[i])) i++;
+      vSpans.push([s, i]);
+    } else { i++; }
+  }
+
+  if (vSpans.length < 2) return [word];
+
+  // Build (count-1) break points in `raw` index space
+  const breaks = [];
+  for (let k = 0; k < vSpans.length - 1 && breaks.length < count - 1; k++) {
+    const afterV1  = vSpans[k][1];      // first char after this vowel group
+    const beforeV2 = vSpans[k + 1][0]; // first char of next vowel group
+    const gap      = beforeV2 - afterV1;
+    const cons     = w.slice(afterV1, beforeV2); // the consonants in between
+
+    let bp;
+    if (gap === 0) {
+      bp = afterV1;                               // VV → split between them
+    } else if (gap === 1) {
+      bp = afterV1;                               // V|CV
+    } else {
+      // Check last-2 and last-3 chars for onset clusters
+      const tail2 = cons.slice(-2);
+      const tail3 = cons.slice(-3);
+      if (gap >= 3 && onsets.has(tail3)) {
+        bp = afterV1 + gap - 3;                  // VC*|CCCV
+      } else if (onsets.has(tail2)) {
+        bp = afterV1 + gap - 2;                  // VC*|CCV  (e.g. peo|ple)
+      } else {
+        bp = afterV1 + Math.ceil(gap / 2);       // VC|CV    (e.g. run|ning)
+      }
+    }
+    breaks.push(Math.max(1, Math.min(bp, raw.length - 1)));
+  }
+
+  // Map positions in `raw` (letters-only) back to `word` (original)
+  const rawToOrig = [];
+  for (let j = 0, r = 0; j < word.length; j++) {
+    if (/[a-zA-Z']/.test(word[j])) rawToOrig[r++] = j;
+  }
+  rawToOrig[raw.length] = word.length; // sentinel
+
+  const origBreaks = breaks
+    .map(b => rawToOrig[b] ?? word.length)
+    .filter((b, idx, a) => b > (idx > 0 ? a[idx - 1] : 0) && b < word.length);
+
+  // Slice the original word at each break
+  const parts = [];
+  let prev = 0;
+  for (const ob of origBreaks) {
+    parts.push(word.slice(prev, ob));
+    prev = ob;
+  }
+  parts.push(word.slice(prev));
+
+  const valid = parts.filter(Boolean);
+  return valid.length >= 2 ? valid : [word];
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  setFillPct — central helper for driving one word's wipe
+//
+//  pct  0–100 (float).  Handles:
+//    • fill.style.width (the overflow-clip reveal)
+//    • --fill-x CSS var (drives the scan-line ::after pseudo-element)
+//    • .wiping class   (shows/hides the scan-line glow)
+//    • .word-complete flash (one-shot brightness burst on completion)
+// ══════════════════════════════════════════════════════════════════
+function setFillPct(wrap, fill, pct) {
+  const pctStr = pct.toFixed(1) + '%';
+  fill.style.width = pctStr;
+
+  if (pct >= 99.5) {
+    // Word is done — hide scan-line, fire completion flash once
+    wrap.classList.remove('wiping');
+    wrap.style.setProperty('--fill-x', '100%');
+    if (!wrap.dataset.done) {
+      wrap.dataset.done = '1';
+      wrap.classList.add('word-complete');
+      setTimeout(() => wrap.classList.remove('word-complete'), 420);
+    }
+  } else if (pct <= 0.5) {
+    // Word not yet started — everything hidden
+    wrap.classList.remove('wiping', 'word-complete');
+    wrap.style.setProperty('--fill-x', '0%');
+    delete wrap.dataset.done;
+  } else {
+    // Mid-wipe — show scan-line at the fill frontier
+    wrap.classList.add('wiping');
+    wrap.classList.remove('word-complete');
+    wrap.style.setProperty('--fill-x', pctStr);
+    delete wrap.dataset.done;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Per-word karaoke wipe
+//
+//  Two modes:
+//  A) Real timestamps — data-t / data-t-end on each .overlay-word-wrap
+//  B) Syllable estimate — proportional share of the line's time budget
+//
+//  t   = current player time (seconds, with syncOffset applied)
+//  idx = index into lyrics[]
+// ══════════════════════════════════════════════════════════════════
+function updateKaraokeWipe(t, idx) {
+  const wraps = document.querySelectorAll('.overlay-word-wrap');
+  if (!wraps.length) return;
+
+  const line    = lyrics[idx];
+  const hasReal = line && line.words && line.words.length;
+
+  if (hasReal) {
+    // ── Mode A: real per-word timestamps ──────────────────────────
+    wraps.forEach((wrap, i) => {
+      const fill = wrap.querySelector('.overlay-word-fill');
+      if (!fill) return;
+
+      const tStart = parseFloat(wrap.dataset.t);
+      let   tEnd   = parseFloat(wrap.dataset.tEnd);
+
+      if (isNaN(tEnd) || tEnd <= tStart) {
+        tEnd = lyrics[idx + 1] ? lyrics[idx + 1].time : tStart + 1.5;
+      }
+
+      if (isNaN(tStart)) {
+        setFillPct(wrap, fill, t >= line.time ? 100 : 0);
+        return;
+      }
+
+      if (t >= tEnd) {
+        setFillPct(wrap, fill, 100);
+      } else if (t <= tStart) {
+        setFillPct(wrap, fill, 0);
+      } else {
+        setFillPct(wrap, fill, (t - tStart) / (tEnd - tStart) * 100);
+      }
+    });
+
+  } else {
+    // ── Mode B: syllable-weighted fallback ────────────────────────
+    const lineStart     = line ? line.time : t;
+    const nextStart     = lyrics[idx + 1] ? lyrics[idx + 1].time : lineStart + 5;
+    const gap           = nextStart - lineStart;
+    const sweepDuration = Math.max(0.6, gap * 0.93);
+    const progress      = Math.max(0, Math.min(1, (t - lineStart) / sweepDuration));
+
+    const syls = Array.from(wraps).map(w =>
+      countSyllables(w.querySelector('.overlay-word-base').textContent));
+    const totalSyls = syls.reduce((a, b) => a + b, 0);
+
+    let cumSyls = 0;
+    wraps.forEach((wrap, i) => {
+      const wordStart = cumSyls / totalSyls;
+      const wordEnd   = (cumSyls + syls[i]) / totalSyls;
+      cumSyls += syls[i];
+
+      const fill = wrap.querySelector('.overlay-word-fill');
+      if (!fill) return;
+
+      if (progress >= wordEnd) {
+        setFillPct(wrap, fill, 100);
+      } else if (progress <= wordStart) {
+        setFillPct(wrap, fill, 0);
+      } else {
+        setFillPct(wrap, fill, (progress - wordStart) / (wordEnd - wordStart) * 100);
+      }
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Overlay: 3-line display (prev | current words | next)
+// ══════════════════════════════════════════════════════════════════
+function updateOverlay(idx) {
+  const prevEl = document.getElementById('overlayPrev');
+  const currEl = document.getElementById('overlayCurrent');
+  const nextEl = document.getElementById('overlayNext');
+  if (!currEl) return;
+
+  if (idx < 0) { clearOverlay(); return; }
+
+  if (prevEl) prevEl.textContent = idx > 0 ? lyrics[idx - 1].text : '';
+
+  // Render each word as a dual-layer pair: dim base + bright fill.
+  // When enhanced LRC data is present, store per-word timestamps so
+  // updateKaraokeWipe can drive each word with its actual start time.
+  const line      = lyrics[idx];
+  const wordItems = (line.words && line.words.length)
+    ? line.words
+    : line.text.split(/\s+/).map(w => ({ text: w, time: null }));
+
+  currEl.innerHTML = wordItems.map((w, i) => {
+    const tStart = w.time    != null ? w.time    : null;
+    const tEnd   = w.endTime != null ? w.endTime :
+                   (wordItems[i + 1]?.time != null ? wordItems[i + 1].time : null);
+
+    // ── Single helper: one wipe span ────────────────────────────
+    const wipeSpan = (text, ts, te) => {
+      const ds = ts != null ? ts : '';
+      const de = te != null ? te : '';
+      return `<span class="overlay-word-wrap" data-t="${ds}" data-t-end="${de}">` +
+        `<span class="overlay-word-base">${escHtml(text)}</span>` +
+        `<span class="overlay-word-fill">${escHtml(text)}</span>` +
+        `</span>`;
+    };
+
+    // ── Split into syllables when we have real timing ────────────
+    const syls = syllabify(w.text);
+
+    if (syls.length <= 1) {
+      // Single syllable or no timing — one wipe span per word
+      return wipeSpan(w.text, tStart, tEnd);
+    }
+
+    // Multi-syllable: subdivide the word's time budget evenly
+    // across its syllables so each one gets its own wipe unit.
+    // This replicates the per-syllable colour-change of CDG karaoke.
+    const hasTiming = tStart != null && tEnd != null;
+    const dur       = hasTiming ? tEnd - tStart : 0;
+    const n         = syls.length;
+
+    const sylSpans = syls.map((syl, si) => {
+      const st = hasTiming ? tStart + dur * (si / n)       : null;
+      const et = hasTiming ? tStart + dur * ((si + 1) / n) : null;
+      return wipeSpan(syl, st != null ? +st.toFixed(4) : null,
+                           et != null ? +et.toFixed(4) : null);
+    }).join('');
+
+    // Wrap in a group so syllables are flush with each other but the
+    // group has normal inter-word spacing after it.
+    return `<span class="overlay-syl-group">${sylSpans}</span>`;
+  }).join(' ');
+
+  // Trigger line-entry animation: remove class, force reflow, re-add
+  currEl.classList.remove('entering');
+  void currEl.offsetWidth;
+  currEl.classList.add('entering');
+
+  if (nextEl) nextEl.textContent = lyrics[idx + 1] ? lyrics[idx + 1].text : '';
+  const next2El = document.getElementById('overlayNext2');
+  if (next2El) next2El.textContent = lyrics[idx + 2] ? lyrics[idx + 2].text : '';
+}
+
+function clearOverlay() {
+  const prevEl = document.getElementById('overlayPrev');
+  const currEl = document.getElementById('overlayCurrent');
+  const nextEl = document.getElementById('overlayNext');
+  if (prevEl) prevEl.textContent = '';
+  if (currEl) currEl.innerHTML = `
+    <span class="overlay-word-wrap">
+      <span class="overlay-word-base" style="color:rgba(255,255,255,0.1)">♪</span>
+      <span class="overlay-word-fill">♪</span>
+    </span>`;
+  if (nextEl) nextEl.textContent = '';
+  const next2El = document.getElementById('overlayNext2');
+  if (next2El) next2El.textContent = '';
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Lyrics panel
+// ══════════════════════════════════════════════════════════════════
+function highlightLine(idx) {
+  document.querySelectorAll('.lyric-line').forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+  });
+  if (idx >= 0) {
+    const el = document.querySelector(`.lyric-line[data-i="${idx}"]`);
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
+function renderLyricsPanel() {
+  const panel = document.getElementById('tab-lyrics');
+  if (!lyrics.length) { showPanel('empty', 'No lyrics available.'); return; }
+
+  panel.innerHTML = lyrics.map((l, i) => `
+    <div class="lyric-line" data-i="${i}" data-time="${l.time}">
+      <span class="ts">${fmtTime(l.time)}</span>
+      <span class="lyric-text">${escHtml(l.text)}</span>
+    </div>`).join('');
+
+  panel.querySelectorAll('.lyric-line').forEach(el => {
+    el.addEventListener('click', () => {
+      if (player && player.seekTo) {
+        // Adjust for offset so seek lands on the right spot
+        player.seekTo(parseFloat(el.dataset.time) - syncOffset, true);
+      }
+    });
+  });
+}
+
+function showPanel(type, msg) {
+  const panel = document.getElementById('tab-lyrics');
+  if (type === 'loading') {
+    panel.innerHTML = `<div class="empty-state"><div class="spinner"></div><p>Finding lyrics…</p></div>`;
+  } else {
+    panel.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>${escHtml(msg || '')}</p></div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Queue management
+// ══════════════════════════════════════════════════════════════════
+async function getVideoTitle(id) {
+  try {
+    const res = await fetch(
+      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${id}&format=json`
+    );
+    if (!res.ok) return `Video ${id}`;
+    const data = await res.json();
+    return data.title || `Video ${id}`;
+  } catch(e) { return `Video ${id}`; }
+}
+
+async function addToQueue(videoId) {
+  if (queue.find(q => q.id === videoId)) {
+    flashStatus('err', 'Already in queue');
+    return;
+  }
+  setStatus('loading', 'Adding to queue…');
+  const title = await getVideoTitle(videoId);
+  const thumb = `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+  queue.push({ id: videoId, title, thumb });
+  renderQueue();
+  flashStatus('ok', 'Added to queue');
+}
+
+function removeFromQueue(i) {
+  queue.splice(i, 1);
+  if (queueIndex >= i) queueIndex = Math.max(-1, queueIndex - 1);
+  renderQueue();
+}
+
+function playQueueItem(i) {
+  queueIndex     = i;
+  currentVideoId = null; // force lyrics re-fetch on new video
+  const item     = queue[i];
+  document.getElementById('urlInput').value = `https://youtube.com/watch?v=${item.id}`;
+  setStatus('loading', 'Loading…');
+  showPanel('loading');
+  loadVideo(item.id);
+  renderQueue();
+}
+
+function playNextInQueue() {
+  if (queueIndex >= 0 && queueIndex < queue.length - 1) {
+    playQueueItem(queueIndex + 1);
+  } else {
+    setStatus('', queueIndex >= 0 ? 'Queue finished' : 'Ready');
+  }
+}
+
+function renderQueue() {
+  const list   = document.getElementById('queueList');
+  const footer = document.getElementById('queueFooter');
+  const count  = document.getElementById('queueCount');
+
+  if (!queue.length) {
+    list.innerHTML = `<div class="queue-empty">
+      <div class="icon">📋</div>
+      <p>Queue is empty.<br>Add songs with "+ Queue" above.</p>
+    </div>`;
+    footer.style.display = 'none';
+    return;
+  }
+
+  footer.style.display = 'flex';
+  count.textContent = `${queue.length} song${queue.length !== 1 ? 's' : ''}`;
+
+  list.innerHTML = queue.map((item, i) => `
+    <div class="queue-item${i === queueIndex ? ' current' : ''}" data-qi="${i}">
+      <span class="queue-num">${i + 1}</span>
+      <span class="queue-play-icon">▶</span>
+      <img class="queue-thumb" src="${item.thumb}" alt="" loading="lazy"
+           onerror="this.style.display='none'">
+      <div class="queue-info">
+        <div class="queue-title">${escHtml(item.title)}</div>
+        <div class="queue-sub">${item.id}</div>
+      </div>
+      <button class="queue-del" data-qi="${i}" title="Remove">✕</button>
+    </div>`).join('');
+
+  list.querySelectorAll('.queue-item').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.classList.contains('queue-del')) return;
+      playQueueItem(parseInt(el.dataset.qi));
+    });
+  });
+  list.querySelectorAll('.queue-del').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      removeFromQueue(parseInt(btn.dataset.qi));
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Status helpers
+// ══════════════════════════════════════════════════════════════════
+let statusTimer = null;
+
+function setStatus(type, msg) {
+  const badge = document.getElementById('statusBadge');
+  const text  = document.getElementById('statusText');
+  badge.className = 'status-badge';
+  if (type) badge.classList.add(type);
+  text.textContent = msg || 'Ready';
+}
+
+function flashStatus(type, msg, ms = 2200) {
+  setStatus(type, msg);
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => setStatus('', 'Ready'), ms);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Helpers
+// ══════════════════════════════════════════════════════════════════
+function fmtTime(s) {
+  const m   = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Events: Load / Enter key
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('loadBtn').addEventListener('click', handleLoad);
+document.getElementById('urlInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') handleLoad();
+});
+
+function handleLoad() {
+  const raw = document.getElementById('urlInput').value;
+  const id  = extractVideoId(raw);
+  if (!id) { flashStatus('err', 'Invalid YouTube URL'); return; }
+
+  currentVideoId = null; // force lyrics re-fetch
+  stopSync();
+  lyrics       = [];
+  currentIndex = -1;
+  setStatus('loading', 'Loading…');
+  showPanel('loading');
+  loadVideo(id);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Events: Queue buttons
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('queueBtn').addEventListener('click', async () => {
+  const raw = document.getElementById('urlInput').value;
+  const id  = extractVideoId(raw);
+  if (!id) { flashStatus('err', 'Invalid YouTube URL'); return; }
+  await addToQueue(id);
+  switchTab('queue');
+});
+
+document.getElementById('clearQueueBtn').addEventListener('click', () => {
+  queue      = [];
+  queueIndex = -1;
+  renderQueue();
+});
+
+// ══════════════════════════════════════════════════════════════════
+//  Events: Tab switching
+// ══════════════════════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  const btn     = document.querySelector(`.tab[data-tab="${name}"]`);
+  const content = document.getElementById(`tab-${name}`);
+  if (btn)     btn.classList.add('active');
+  if (content) content.classList.add('active');
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Events: Controls
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('offsetSlider').addEventListener('input', function() {
+  syncOffset = parseFloat(this.value);
+  document.getElementById('offsetVal').textContent =
+    (syncOffset >= 0 ? '+' : '') + syncOffset.toFixed(1) + 's';
+});
+
+document.getElementById('sizeSlider').addEventListener('input', function() {
+  const sz = this.value + 'px';
+  document.documentElement.style.setProperty('--lyric-size', sz);
+  document.getElementById('sizeVal').textContent = sz;
+});
+
+document.querySelectorAll('.swatch').forEach(sw => {
+  sw.addEventListener('click', function() {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    this.classList.add('active');
+    document.documentElement.style.setProperty('--lyric-color', this.dataset.color);
+  });
+});
+
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    displayMode = this.dataset.mode;
+    const overlay = document.getElementById('lyricsOverlay');
+    if (!overlay) return;
+    overlay.classList.toggle('visible', displayMode === 'karaoke');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════
+//  Fullscreen
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('fullscreenBtn').addEventListener('click', () => {
+  const wrapper = document.getElementById('videoWrapper');
+  if (!document.fullscreenElement) {
+    wrapper.requestFullscreen().catch(err => console.warn('Fullscreen:', err));
+  } else {
+    document.exitFullscreen();
+  }
+});
+
+document.addEventListener('fullscreenchange', () => {
+  const overlay = document.getElementById('lyricsOverlay');
+  if (overlay && displayMode === 'karaoke' && lyrics.length) {
+    overlay.classList.add('visible');
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+//  Panel toggle
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('panelToggleBtn').addEventListener('click', () => {
+  const main = document.querySelector('.main');
+  const btn  = document.getElementById('panelToggleBtn');
+  const collapsed = main.classList.toggle('panel-collapsed');
+  btn.classList.toggle('collapsed', collapsed);
+  btn.title = collapsed ? 'Show panel' : 'Hide panel';
+});
+
+// ══════════════════════════════════════════════════════════════════
+//  Keyboard shortcuts for live sync adjustment
+//    ← / →   shift offset ±0.3s
+//    ↑ / ↓   shift offset ±1.0s
+//  Only active when the URL input is NOT focused.
+// ══════════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (document.activeElement === document.getElementById('urlInput')) return;
+  let delta = 0;
+  if (e.key === 'ArrowRight') delta = 0.3;
+  if (e.key === 'ArrowLeft')  delta = -0.3;
+  if (e.key === 'ArrowUp')    delta = 1.0;
+  if (e.key === 'ArrowDown')  delta = -1.0;
+  if (delta === 0) return;
+  e.preventDefault();
+  syncOffset = Math.round((syncOffset + delta) * 10) / 10;
+  syncOffset = Math.max(-10, Math.min(10, syncOffset));
+  // Update the slider + label to match
+  document.getElementById('offsetSlider').value = syncOffset;
+  document.getElementById('offsetVal').textContent =
+    (syncOffset >= 0 ? '+' : '') + syncOffset.toFixed(1) + 's';
+  // Run a tick immediately so the change is instant
+  tick();
+  flashStatus('ok', `Sync: ${syncOffset >= 0 ? '+' : ''}${syncOffset.toFixed(1)}s`, 1200);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "/",  "dest": "/karaoke-app-revise.html" },
+    { "src": "/api/kugou/search", "dest": "/api/kugou/search.py" },
+    { "src": "/api/kugou/lyrics", "dest": "/api/kugou/lyrics.py" }
+  ]
+}
