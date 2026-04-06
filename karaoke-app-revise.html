@@ -629,6 +629,34 @@ header {
 
 input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 
+.offset-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 7px;
+}
+.offset-row input[type=range] { flex: 1; }
+.offset-btn {
+  flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 7px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--fg); font-size: 18px; line-height: 1;
+  cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.offset-btn:hover { background: rgba(232,255,71,0.12); border-color: rgba(232,255,71,0.4); }
+.offset-footer {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.offset-hint {
+  font-size: 10px; color: var(--muted); opacity: 0.7; letter-spacing: 0.5px;
+}
+.offset-reset {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--muted); border-radius: 5px;
+  padding: 3px 9px; font-size: 10px; cursor: pointer;
+  transition: all 0.15s;
+}
+.offset-reset:hover { border-color: var(--accent); color: var(--accent); }
+
 .color-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .swatch {
   width: 30px; height: 30px; border-radius: 7px;
@@ -826,8 +854,16 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
       </div>
 
       <div class="ctrl-group">
-        <label>Sync Offset <span class="val" id="offsetVal">0.0s</span></label>
-        <input type="range" id="offsetSlider" min="-10" max="10" step="0.1" value="0">
+        <label>Timing Offset <span class="val" id="offsetVal">+0.0s</span></label>
+        <div class="offset-row">
+          <button class="offset-btn" id="offsetMinus" title="−0.5s (←)">−</button>
+          <input type="range" id="offsetSlider" min="-5" max="5" step="0.1" value="0">
+          <button class="offset-btn" id="offsetPlus"  title="+0.5s (→)">+</button>
+        </div>
+        <div class="offset-footer">
+          <span class="offset-hint">← → keys to nudge · ↑ ↓ for ±1s</span>
+          <button class="offset-reset" id="offsetReset">Reset</button>
+        </div>
       </div>
 
       <div class="ctrl-group">
@@ -1351,6 +1387,9 @@ async function onPlayerState(e) {
       document.getElementById('statusRow').style.display = 'none';
       clearOverlay();
       showPanel('loading');
+      // Reset timing offset for each new song so stale adjustments
+      // from the previous track don't carry over.
+      applyOffset(0);
 
       // Hold the video while we fetch — grab duration before pausing
       // because getDuration() is reliable while PLAYING.
@@ -2035,10 +2074,31 @@ function switchTab(name) {
 // ══════════════════════════════════════════════════════════════════
 //  Events: Controls
 // ══════════════════════════════════════════════════════════════════
-document.getElementById('offsetSlider').addEventListener('input', function() {
-  syncOffset = parseFloat(this.value);
+function applyOffset(val) {
+  syncOffset = Math.max(-5, Math.min(5, Math.round(val * 10) / 10));
+  document.getElementById('offsetSlider').value = syncOffset;
   document.getElementById('offsetVal').textContent =
     (syncOffset >= 0 ? '+' : '') + syncOffset.toFixed(1) + 's';
+  tick();
+}
+
+document.getElementById('offsetSlider').addEventListener('input', function() {
+  applyOffset(parseFloat(this.value));
+});
+
+document.getElementById('offsetMinus').addEventListener('click', () => {
+  applyOffset(syncOffset - 0.5);
+  flashStatus('ok', `Timing: ${syncOffset >= 0 ? '+' : ''}${syncOffset.toFixed(1)}s`, 1000);
+});
+
+document.getElementById('offsetPlus').addEventListener('click', () => {
+  applyOffset(syncOffset + 0.5);
+  flashStatus('ok', `Timing: ${syncOffset >= 0 ? '+' : ''}${syncOffset.toFixed(1)}s`, 1000);
+});
+
+document.getElementById('offsetReset').addEventListener('click', () => {
+  applyOffset(0);
+  flashStatus('ok', 'Timing reset to 0.0s', 1000);
 });
 
 document.getElementById('sizeSlider').addEventListener('input', function() {
@@ -2105,21 +2165,14 @@ document.getElementById('panelToggleBtn').addEventListener('click', () => {
 document.addEventListener('keydown', e => {
   if (document.activeElement === document.getElementById('urlInput')) return;
   let delta = 0;
-  if (e.key === 'ArrowRight') delta = 0.3;
+  if (e.key === 'ArrowRight') delta =  0.3;
   if (e.key === 'ArrowLeft')  delta = -0.3;
-  if (e.key === 'ArrowUp')    delta = 1.0;
+  if (e.key === 'ArrowUp')    delta =  1.0;
   if (e.key === 'ArrowDown')  delta = -1.0;
   if (delta === 0) return;
   e.preventDefault();
-  syncOffset = Math.round((syncOffset + delta) * 10) / 10;
-  syncOffset = Math.max(-10, Math.min(10, syncOffset));
-  // Update the slider + label to match
-  document.getElementById('offsetSlider').value = syncOffset;
-  document.getElementById('offsetVal').textContent =
-    (syncOffset >= 0 ? '+' : '') + syncOffset.toFixed(1) + 's';
-  // Run a tick immediately so the change is instant
-  tick();
-  flashStatus('ok', `Sync: ${syncOffset >= 0 ? '+' : ''}${syncOffset.toFixed(1)}s`, 1200);
+  applyOffset(syncOffset + delta);
+  flashStatus('ok', `Timing: ${syncOffset >= 0 ? '+' : ''}${syncOffset.toFixed(1)}s`, 1000);
 });
 </script>
 </body>
