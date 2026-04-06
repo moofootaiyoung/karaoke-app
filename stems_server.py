@@ -78,6 +78,7 @@ def _process(video_id: str):
                 "--audio-quality", "0",
                 "-o", str(wav_path.with_suffix("")),   # yt-dlp appends .wav
                 "--no-playlist",
+                "--no-check-certificate",              # bypass macOS SSL cert issues
                 f"https://www.youtube.com/watch?v={video_id}",
             ],
             capture_output=True, timeout=180,
