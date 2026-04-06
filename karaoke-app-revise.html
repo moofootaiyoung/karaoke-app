@@ -1043,12 +1043,40 @@ function fuseTimestamps(lrclibLines, kugouLines) {
       return lrcLine;   // no match — keep lrclib line (syllable fallback)
     }
 
-    const kBase = bestLine.time;   // Kugou's absolute line start (discarded)
-    const words = bestLine.words.map(w => ({
-      text:    w.text,
-      time:    lrcLine.time + (w.time    - kBase),   // anchored to lrclib
-      endTime: lrcLine.time + (w.endTime - kBase),
-    }));
+    const kBase  = bestLine.time;
+    const kWords = bestLine.words;
+
+    // ── Language mismatch guard ──────────────────────────────────────
+    // Kugou is a Chinese platform and sometimes returns a Korean/Chinese
+    // cover instead of the original English track. Detect this by checking
+    // whether Kugou's word texts contain non-Latin script (CJK, Hangul, etc.)
+    // If so, DON'T use Kugou's word texts — instead split lrclib's English
+    // line into words and distribute the Kugou line's total duration across
+    // them proportionally. This preserves the timing accuracy of the fusion
+    // while displaying the correct English lyrics.
+    const isNonLatin = kWords.some(w => /[^\u0000-\u024f]/.test(w.text));
+
+    let words;
+    if (isNonLatin) {
+      // Use lrclib's English words with proportional timing from Kugou's
+      // line duration (first word start → last word end).
+      const lrcWords   = lrcLine.text.split(/\s+/).filter(Boolean);
+      const kLineStart = kWords[0].time    - kBase;   // offset of first word
+      const kLineDur   = kWords[kWords.length - 1].endTime - kWords[0].time;
+      const n          = lrcWords.length;
+      words = lrcWords.map((text, wi) => ({
+        text,
+        time:    lrcLine.time + kLineStart + kLineDur * (wi / n),
+        endTime: lrcLine.time + kLineStart + kLineDur * ((wi + 1) / n),
+      }));
+    } else {
+      // Same language: anchor Kugou's per-word timestamps to lrclib's line start
+      words = kWords.map(w => ({
+        text:    w.text,
+        time:    lrcLine.time + (w.time    - kBase),
+        endTime: lrcLine.time + (w.endTime - kBase),
+      }));
+    }
 
     return {
       time:  lrcLine.time,   // lrclib's YouTube-accurate anchor
