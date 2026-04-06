@@ -926,6 +926,16 @@ async function fetchKugouLyricsRaw(artist, track) {
   const sdata = await sres.json();
   if (!sdata.id) return null;
 
+  // JS-side title sanity check: if the returned song name shares no tokens
+  // with our search title, it's almost certainly the wrong song.
+  // Allow it through if we have no track to compare against.
+  if (track) {
+    const titleSim = textSimilarity(track, sdata.song || '');
+    // Also check against artist in case song name includes artist (e.g. "Bruno Mars - APT")
+    const fullSim  = textSimilarity(q, `${sdata.singer || ''} ${sdata.song || ''}`);
+    if (titleSim < 0.12 && fullSim < 0.12) return null;
+  }
+
   const lres  = await fetch(`/api/kugou/lyrics?id=${sdata.id}&ak=${sdata.accesskey}`);
   const ldata = await lres.json();
   if (!ldata.krc) return null;
@@ -936,6 +946,7 @@ async function fetchKugouLyricsRaw(artist, track) {
   // Attach metadata for UI display after fusion decision is made
   parsed._song   = sdata.song   || '';
   parsed._singer = sdata.singer || '';
+  parsed._score  = sdata.score  || 0;
   return parsed;
 }
 
@@ -949,8 +960,29 @@ async function fetchLrclibRaw(track, artist, duration) {
   if (!res.ok) return null;
   const data = await res.json();
   if (!data.length) return null;
-  const entry = data.find(r => r.syncedLyrics) || data[0];
-  if (!entry) return null;
+
+  // Score each result by title + artist similarity, preferring synced entries.
+  // This prevents lrclib from returning a completely unrelated song.
+  const scoreEntry = r => {
+    const titleSim  = textSimilarity(track,  r.trackName  || '');
+    const artistSim = artist ? textSimilarity(artist, r.artistName || '') : 0.5;
+    const syncBonus = r.syncedLyrics ? 0.15 : 0;
+    // Duration closeness bonus (within 10s = +0.1)
+    const durBonus  = (duration && r.duration)
+      ? (Math.abs(r.duration - duration) < 10 ? 0.1 : 0)
+      : 0;
+    return titleSim * 0.5 + artistSim * 0.3 + syncBonus + durBonus;
+  };
+
+  const ranked = [...data].sort((a, b) => scoreEntry(b) - scoreEntry(a));
+  // Require a minimum relevance — if the best result shares no tokens with our
+  // search, don't use lrclib at all (better to show nothing than wrong lyrics).
+  const best = ranked[0];
+  if (scoreEntry(best) < 0.1) return null;
+
+  // Prefer a synced entry from the top-3 if the top result isn't synced
+  const entry = ranked.slice(0, 3).find(r => r.syncedLyrics) || best;
+
   let lines, synced = false;
   if (entry.syncedLyrics) {
     lines  = parseLrc(entry.syncedLyrics);
@@ -1148,12 +1180,42 @@ async function fetchLyrics(title, duration) {
   const kugou  = kugouResult.status  === 'fulfilled' ? kugouResult.value  : null;
   const lrclib = lrclibResult.status === 'fulfilled' ? lrclibResult.value : null;
 
+  // ── Helpers for Tier guards ────────────────────────────────────
+  const isNonLatinText = str => /[^\u0000-\u024f]/.test(str);
+  const queryIsLatin   = !isNonLatinText(clean);
+
+  // Duration guard: if Kugou's last lyric line is > 50% shorter or 50% longer
+  // than the actual song, it's likely the wrong track entirely.
+  const kugouDurationOk = kugou && kugou.length && duration
+    ? (() => {
+        const lastT = kugou[kugou.length - 1].time;
+        return lastT > duration * 0.4 && lastT < duration * 1.6;
+      })()
+    : true;
+
+  // Language mismatch: query in Latin script but Kugou result has non-Latin words
+  const kugouIsNonLatin = kugou && kugou.some(line =>
+    (line.words || []).some(w => isNonLatinText(w.text))
+  );
+  const kugouLangMismatch = queryIsLatin && kugouIsNonLatin;
+
+  // Title similarity between our search and what Kugou returned
+  const kugouTitleSim = kugou
+    ? textSimilarity(queryTitle, kugou._song || '')
+    : 0;
+
+  // A Kugou result is "trustworthy" if it passes all guards
+  const kugouTrusted = kugou && kugou.length
+    && kugouDurationOk
+    && !kugouLangMismatch
+    && (kugouTitleSim >= 0.1 || !queryTitle);  // allow if we have no title to compare
+
   // ── Tier 1: Fused (best accuracy) ─────────────────────────────
-  if (kugou && kugou.length && lrclib && lrclib.lines && lrclib.lines.length && lrclib.synced) {
+  if (kugouTrusted && lrclib && lrclib.lines && lrclib.lines.length && lrclib.synced) {
     const fused = fuseTimestamps(lrclib.lines, kugou);
     const wordLineCount = fused.filter(l => l.words && l.words.length).length;
-    // Only use fusion if we matched a meaningful fraction of lines
-    if (wordLineCount >= Math.min(3, fused.length * 0.4)) {
+    // Require at least 25% of lines word-matched (stricter than before)
+    if (wordLineCount >= 3 && wordLineCount >= fused.length * 0.25) {
       document.getElementById('songTitle').textContent =
         `${lrclib.artist} — ${lrclib.track}`;
       document.getElementById('statusRow').style.display = 'flex';
@@ -1163,7 +1225,7 @@ async function fetchLyrics(title, duration) {
   }
 
   // ── Tier 2: Kugou only (word-level, Kugou-calibrated) ─────────
-  if (kugou && kugou.length) {
+  if (kugouTrusted) {
     if (kugou._song && kugou._singer) {
       document.getElementById('songTitle').textContent =
         `${kugou._singer} — ${kugou._song}`;
