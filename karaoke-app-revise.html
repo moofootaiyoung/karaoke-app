@@ -929,6 +929,75 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 .video-wrapper:fullscreen .overlay-prev  { font-size: calc(var(--lyric-size) * 0.32); }
 .video-wrapper:fullscreen .overlay-next  { font-size: calc(var(--lyric-size) * 0.72); }
 .video-wrapper:fullscreen .overlay-next2 { font-size: calc(var(--lyric-size) * 0.38); }
+
+/* ── Option B: Stems loading overlay on the video ── */
+.stems-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.78);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 25;
+  gap: 14px;
+}
+.stems-loading-overlay .spinner { margin: 0; }
+#stemsLoadingMsg {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  padding: 0 28px;
+  max-width: 300px;
+  line-height: 1.6;
+}
+#stemsLoadingTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+.stems-cancel-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.18s;
+  margin-top: 4px;
+}
+.stems-cancel-btn:hover { border-color: #ff5555; color: #ff5555; }
+
+/* Stems toggle in controls panel */
+.stems-toggle-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.18s;
+  text-align: center;
+}
+.stems-toggle-btn:hover { border-color: rgba(232,255,71,0.35); color: var(--text); }
+.stems-toggle-btn.stems-on {
+  background: rgba(232,255,71,0.09);
+  border-color: rgba(232,255,71,0.35);
+  color: var(--accent);
+}
+.stems-toggle-btn.stems-error { border-color: rgba(255,85,85,0.35); color: #ff7070; }
+#stemsStatusMsg {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 8px;
+}
+#stemsStatusMsg.stems-err { color: #ff6060; }
 </style>
 </head>
 <body>
@@ -996,6 +1065,14 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
         <div class="overlay-current-wrap" id="overlayCurrent"></div>
         <div class="overlay-next" id="overlayNext"></div>
         <div class="overlay-next2" id="overlayNext2"></div>
+      </div>
+
+      <!-- Option B: stems processing overlay -->
+      <div class="stems-loading-overlay" id="stemsLoadingOverlay" style="display:none">
+        <div class="spinner"></div>
+        <div id="stemsLoadingTitle">Vocal Reduction</div>
+        <div id="stemsLoadingMsg">Contacting stems server…</div>
+        <button class="stems-cancel-btn" id="stemsCancelBtn">Cancel</button>
       </div>
 
       <button class="fullscreen-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
@@ -1079,6 +1156,18 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
           <div class="swatch" data-color="#ff9966" style="background:#ff9966"></div>
           <div class="swatch" data-color="#66aaff" style="background:#66aaff"></div>
         </div>
+      </div>
+
+      <div class="ctrl-group">
+        <label>Vocal Reduction <span class="val" id="stemsVal">Off</span></label>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:10px; line-height:1.6">
+          Strips vocals via AI separation (Demucs). First run takes 2–5 min;
+          results are cached. Requires
+          <code style="background:rgba(255,255,255,0.07);border-radius:3px;padding:1px 4px;font-size:10px">stems_start.command</code>
+          running locally.
+        </div>
+        <button class="stems-toggle-btn" id="stemsToggleBtn">Enable Vocal Reduction</button>
+        <div id="stemsStatusMsg" style="display:none"></div>
       </div>
 
     </div>
@@ -1576,6 +1665,9 @@ async function onPlayerState(e) {
     const vid  = info.video_id;
 
     if (vid && vid !== currentVideoId) {
+      // New video — exit stems mode so stale stems don't play over new song
+      if (stemsActive) exitStemsMode();
+
       // New video — pause immediately so audio and lyrics start together,
       // then fetch lyrics, then seek to 0 and resume.
       currentVideoId = vid;
@@ -1613,12 +1705,19 @@ async function onPlayerState(e) {
     }
 
     startSync();
+    // Stems: resume stem audio when YouTube resumes
+    if (stemsActive && stemsAudio) {
+      stemsAudio.currentTime = player.getCurrentTime();
+      stemsAudio.play().catch(() => {});
+    }
 
   } else if (e.data === YT.PlayerState.ENDED) {
     stopSync();
+    if (stemsActive && stemsAudio) stemsAudio.pause();
     playNextInQueue();
   } else if (e.data === YT.PlayerState.PAUSED) {
     stopSync();
+    if (stemsActive && stemsAudio) stemsAudio.pause();
   }
 }
 
@@ -2444,6 +2543,206 @@ document.getElementById('panelToggleBtn').addEventListener('click', () => {
   const collapsed = main.classList.toggle('panel-collapsed');
   btn.classList.toggle('collapsed', collapsed);
   btn.title = collapsed ? 'Show panel' : 'Hide panel';
+});
+
+// ══════════════════════════════════════════════════════════════════
+//  Option B — Server-side Vocal Reduction (Demucs / stems_server.py)
+//
+//  Flow:
+//   1. User clicks "Enable Vocal Reduction" in Controls.
+//   2. App pings GET http://localhost:8082/stems?id=VIDEO_ID.
+//      • If status == "done"  → activate immediately with stem URL.
+//      • If status == "processing" / "downloading" / "separating"
+//        → show loading overlay, poll /stems/status every 3 s.
+//   3. On ready: mute YouTube (setVolume(0)), create <audio> playing
+//      the no_vocals.mp3 stream, synced to player.getCurrentTime().
+//   4. Drift correction every 2 s: if |stemAudio.currentTime − ytTime|
+//      > 0.5 s, seek stem audio to match.
+//   5. Player play/pause/seek events are forwarded to stem audio.
+//   6. Disable restores YouTube volume and stops stem audio.
+// ══════════════════════════════════════════════════════════════════
+const STEMS_SERVER  = 'http://localhost:8082';
+let stemsActive     = false;   // vocal reduction is currently on
+let stemsAudio      = null;    // HTMLAudioElement for the stem
+let stemsPollTimer  = null;    // setInterval for status polling
+let stemsDriftTimer = null;    // setInterval for drift correction
+
+// ── Public toggle ──────────────────────────────────────────────────
+async function toggleStemsMode() {
+  if (stemsActive) {
+    exitStemsMode();
+  } else {
+    await initStemsMode();
+  }
+}
+
+// ── Initialise: ping server, start or activate ────────────────────
+async function initStemsMode() {
+  const videoId = currentVideoId;
+  if (!videoId) {
+    flashStatus('err', 'Load a YouTube video first');
+    return;
+  }
+
+  setStemsUI('loading', 'Contacting stems server…');
+
+  try {
+    const res  = await fetch(`${STEMS_SERVER}/stems?id=${videoId}`, { signal: AbortSignal.timeout(6000) });
+    const data = await res.json();
+
+    if (data.url && data.status === 'done') {
+      await activateStemAudio(data.url);
+    } else if (data.status === 'error') {
+      setStemsUI('error', data.message || 'Processing failed');
+    } else {
+      // Processing in progress — show overlay and poll
+      setStemsUI('processing', data.progress || 'Starting…');
+      pollStemsStatus(videoId);
+    }
+  } catch(e) {
+    setStemsUI('error', 'Cannot reach stems server — is stems_start.command running on port 8082?');
+  }
+}
+
+// ── Poll status until done or error ──────────────────────────────
+function pollStemsStatus(videoId) {
+  clearInterval(stemsPollTimer);
+  stemsPollTimer = setInterval(async () => {
+    try {
+      const res  = await fetch(`${STEMS_SERVER}/stems/status?id=${videoId}`, { signal: AbortSignal.timeout(5000) });
+      const data = await res.json();
+
+      if (data.url && data.status === 'done') {
+        clearInterval(stemsPollTimer); stemsPollTimer = null;
+        await activateStemAudio(data.url);
+      } else if (data.status === 'error') {
+        clearInterval(stemsPollTimer); stemsPollTimer = null;
+        setStemsUI('error', data.message || 'Processing failed');
+      } else {
+        // Still going — update progress text
+        setStemsUI('processing', data.progress || 'Processing…');
+      }
+    } catch(e) {
+      clearInterval(stemsPollTimer); stemsPollTimer = null;
+      setStemsUI('error', 'Stems server disconnected');
+    }
+  }, 3000);
+}
+
+// ── Activate: create <audio>, mute YT, sync playback ─────────────
+async function activateStemAudio(url) {
+  if (stemsAudio) { stemsAudio.pause(); stemsAudio.src = ''; }
+
+  stemsAudio = new Audio(url);
+  stemsAudio.crossOrigin = 'anonymous';
+  stemsAudio.preload = 'auto';
+
+  // Seek to current YouTube position before playing
+  if (player && player.getCurrentTime) {
+    stemsAudio.currentTime = Math.max(0, player.getCurrentTime());
+  }
+
+  // Mute YouTube
+  if (player && player.setVolume) player.setVolume(0);
+
+  stemsActive = true;
+  setStemsUI('active', 'Active');
+
+  // Start playing if YouTube is already playing
+  if (player && player.getPlayerState &&
+      player.getPlayerState() === YT.PlayerState.PLAYING) {
+    try { await stemsAudio.play(); } catch(e) { /* autoplay blocked */ }
+  }
+
+  // Drift correction every 2 s — gapless for mild drift, seek for large drift
+  clearInterval(stemsDriftTimer);
+  stemsDriftTimer = setInterval(() => {
+    if (!stemsAudio || !player || !player.getCurrentTime) return;
+    const ytTime   = player.getCurrentTime();
+    const stemTime = stemsAudio.currentTime;
+    const diff     = Math.abs(stemTime - ytTime);
+    if (diff > 0.5) stemsAudio.currentTime = ytTime;
+  }, 2000);
+}
+
+// ── Deactivate: restore YT volume, kill stem audio ────────────────
+function exitStemsMode() {
+  stemsActive = false;
+  clearInterval(stemsPollTimer);
+  clearInterval(stemsDriftTimer);
+  stemsPollTimer  = null;
+  stemsDriftTimer = null;
+
+  if (stemsAudio) {
+    stemsAudio.pause();
+    stemsAudio.src = '';
+    stemsAudio = null;
+  }
+
+  if (player && player.setVolume) player.setVolume(100);
+
+  setStemsUI('off', 'Off');
+}
+
+// ── UI state helper ───────────────────────────────────────────────
+function setStemsUI(state, msg) {
+  const btn      = document.getElementById('stemsToggleBtn');
+  const val      = document.getElementById('stemsVal');
+  const statusEl = document.getElementById('stemsStatusMsg');
+  const overlay  = document.getElementById('stemsLoadingOverlay');
+  const msgEl    = document.getElementById('stemsLoadingMsg');
+
+  if (!btn) return;
+  statusEl.classList.remove('stems-err');
+
+  switch (state) {
+    case 'off':
+      val.textContent  = 'Off';
+      btn.textContent  = 'Enable Vocal Reduction';
+      btn.className    = 'stems-toggle-btn';
+      statusEl.style.display = 'none';
+      if (overlay) overlay.style.display = 'none';
+      break;
+
+    case 'loading':
+    case 'processing':
+      val.textContent  = state === 'loading' ? 'Connecting…' : 'Processing…';
+      btn.textContent  = 'Cancel';
+      btn.className    = 'stems-toggle-btn stems-on';
+      statusEl.style.display = 'block';
+      statusEl.textContent   = msg;
+      if (overlay) {
+        overlay.style.display = 'flex';
+        if (msgEl) msgEl.textContent = msg;
+      }
+      break;
+
+    case 'active':
+      val.textContent  = 'On';
+      btn.textContent  = 'Disable Vocal Reduction';
+      btn.className    = 'stems-toggle-btn stems-on';
+      statusEl.style.display = 'block';
+      statusEl.textContent   = 'Vocals removed — instrumental playing';
+      if (overlay) overlay.style.display = 'none';
+      break;
+
+    case 'error':
+      val.textContent  = 'Error';
+      btn.textContent  = 'Enable Vocal Reduction';
+      btn.className    = 'stems-toggle-btn stems-error';
+      statusEl.style.display = 'block';
+      statusEl.classList.add('stems-err');
+      statusEl.textContent   = msg;
+      if (overlay) overlay.style.display = 'none';
+      break;
+  }
+}
+
+// ── Wire up buttons ───────────────────────────────────────────────
+document.getElementById('stemsToggleBtn').addEventListener('click', toggleStemsMode);
+document.getElementById('stemsCancelBtn').addEventListener('click', () => {
+  clearInterval(stemsPollTimer); stemsPollTimer = null;
+  setStemsUI('off', 'Off');
 });
 
 // ══════════════════════════════════════════════════════════════════
