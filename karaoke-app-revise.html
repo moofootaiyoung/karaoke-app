@@ -1003,8 +1003,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
       <div class="ctrl-group">
         <label>Display Mode</label>
         <div class="mode-btns">
-          <button class="mode-btn active" data-mode="karaoke">🎤 Overlay</button>
-          <button class="mode-btn" data-mode="centered">📺 Centered</button>
+          <button class="mode-btn" data-mode="karaoke">🎤 Overlay</button>
+          <button class="mode-btn active" data-mode="centered">📺 Centered</button>
           <button class="mode-btn" data-mode="classic">☰ Panel</button>
         </div>
       </div>
@@ -1052,7 +1052,7 @@ let lyrics       = [];        // [{time: float, text: string}]
 let currentIndex = -1;
 let syncOffset   = 0;
 let pollTimer    = null;
-let displayMode  = 'karaoke';
+let displayMode  = 'centered';
 let currentVideoId = null;    // tracks loaded video to detect changes (BUG FIX)
 
 // Queue
