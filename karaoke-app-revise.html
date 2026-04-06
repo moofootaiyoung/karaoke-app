@@ -185,6 +185,82 @@ header {
   pointer-events: none;
 }
 
+/* ── Karaoke (Stage) mode button in header ── */
+.karaoke-mode-btn {
+  display: flex; align-items: center; gap: 5px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  padding: 0 10px;
+  height: 30px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+  white-space: nowrap;
+}
+.karaoke-mode-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+body.stage-mode .karaoke-mode-btn {
+  background: rgba(232,255,71,0.1);
+  border-color: rgba(232,255,71,0.45);
+  color: var(--accent);
+}
+
+/* ── Stage mode: hide everything except the video ── */
+body.stage-mode header            { display: none; }
+body.stage-mode .protocol-warning { display: none; }
+body.stage-mode .main {
+  padding: 0;
+  gap: 0;
+  grid-template-columns: 1fr 0px;
+}
+body.stage-mode .panel            { opacity: 0; pointer-events: none; }
+body.stage-mode #statusRow        { display: none !important; }
+body.stage-mode .video-side       { display: flex; flex-direction: column; }
+body.stage-mode .video-wrapper    { flex: 1; border-radius: 0; }
+body.stage-mode .lyrics-overlay   {
+  /* Slightly taller gradient so text is always readable edge-to-edge */
+  padding: 80px 40px 28px;
+}
+/* Lyric sizes bump up slightly in stage mode */
+body.stage-mode .overlay-word-base,
+body.stage-mode .overlay-word-fill { font-size: calc(var(--lyric-size) * 1.15); }
+body.stage-mode .overlay-next      { font-size: calc(var(--lyric-size) * 0.62); }
+body.stage-mode .overlay-next2     { font-size: calc(var(--lyric-size) * 0.34); }
+body.stage-mode .overlay-prev      { font-size: calc(var(--lyric-size) * 0.28); }
+
+/* ── Exit hint toast ── */
+.km-exit-hint {
+  position: fixed;
+  top: 18px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.72);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.75);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 9999;
+  transition: opacity 0.4s ease;
+  white-space: nowrap;
+}
+.km-exit-hint kbd {
+  background: rgba(255,255,255,0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 11px;
+}
+body.stage-mode .km-exit-hint { opacity: 1; }
+body.stage-mode .km-exit-hint.faded { opacity: 0; }
+
 /* Panel toggle button in header */
 .panel-toggle-btn {
   background: transparent;
@@ -766,6 +842,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 </head>
 <body>
 
+<!-- Karaoke mode exit hint — only visible in stage mode -->
+<div class="km-exit-hint" id="kmExitHint">Press <kbd>F</kbd> or <kbd>Esc</kbd> to exit Stage Mode</div>
+
 <!-- ── Header ── -->
 <header>
   <div class="logo">KaraokeMode <span>BETA</span></div>
@@ -778,6 +857,13 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
     <div class="status-dot"></div>
     <span id="statusText">Ready</span>
   </div>
+  <button class="karaoke-mode-btn" id="karaokeModeBtn" title="Karaoke mode (F)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+      <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+    </svg>
+    <span>Stage</span>
+  </button>
   <button class="panel-toggle-btn" id="panelToggleBtn" title="Hide panel">
     <!-- sidebar icon: rectangle with right-panel column -->
     <svg width="15" height="13" viewBox="0 0 15 13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
@@ -2170,6 +2256,51 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 // ══════════════════════════════════════════════════════════════════
+//  Stage (Karaoke) Mode
+// ══════════════════════════════════════════════════════════════════
+let stageHintTimer = null;
+
+function enterStageMode() {
+  document.body.classList.add('stage-mode');
+  // Ensure overlay is visible and lyrics show
+  const overlay = document.getElementById('lyricsOverlay');
+  if (overlay && lyrics.length) overlay.classList.add('visible');
+  // Show the exit hint, then fade it out after 3s
+  const hint = document.getElementById('kmExitHint');
+  if (hint) {
+    hint.classList.remove('faded');
+    clearTimeout(stageHintTimer);
+    stageHintTimer = setTimeout(() => hint.classList.add('faded'), 3000);
+  }
+}
+
+function exitStageMode() {
+  document.body.classList.remove('stage-mode');
+  clearTimeout(stageHintTimer);
+}
+
+function toggleStageMode() {
+  if (document.body.classList.contains('stage-mode')) {
+    exitStageMode();
+  } else {
+    enterStageMode();
+  }
+}
+
+document.getElementById('karaokeModeBtn').addEventListener('click', toggleStageMode);
+
+// Re-show hint briefly when user moves the mouse in stage mode
+// (so they remember how to exit)
+document.addEventListener('mousemove', () => {
+  if (!document.body.classList.contains('stage-mode')) return;
+  const hint = document.getElementById('kmExitHint');
+  if (!hint) return;
+  hint.classList.remove('faded');
+  clearTimeout(stageHintTimer);
+  stageHintTimer = setTimeout(() => hint.classList.add('faded'), 2200);
+});
+
+// ══════════════════════════════════════════════════════════════════
 //  Panel toggle
 // ══════════════════════════════════════════════════════════════════
 document.getElementById('panelToggleBtn').addEventListener('click', () => {
@@ -2188,6 +2319,14 @@ document.getElementById('panelToggleBtn').addEventListener('click', () => {
 // ══════════════════════════════════════════════════════════════════
 document.addEventListener('keydown', e => {
   if (document.activeElement === document.getElementById('urlInput')) return;
+
+  // F — toggle stage (karaoke) mode
+  if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleStageMode(); return; }
+  // Escape — exit stage mode if active
+  if (e.key === 'Escape' && document.body.classList.contains('stage-mode')) {
+    e.preventDefault(); exitStageMode(); return;
+  }
+
   let delta = 0;
   if (e.key === 'ArrowRight') delta =  0.3;
   if (e.key === 'ArrowLeft')  delta = -0.3;
