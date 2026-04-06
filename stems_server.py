@@ -250,13 +250,17 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     # Quick dependency check
     missing = []
-    for cmd in ("yt-dlp", "demucs"):
-        try:
-            subprocess.run([sys.executable, "-m", cmd, "--version"]
-                           if cmd == "demucs" else [cmd, "--version"],
-                           capture_output=True, timeout=5)
-        except FileNotFoundError:
-            missing.append(cmd)
+    # Check yt-dlp via --version (fast)
+    try:
+        subprocess.run(["yt-dlp", "--version"], capture_output=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        missing.append("yt-dlp")
+    # Check demucs via import (fast — avoids loading PyTorch via -m)
+    try:
+        subprocess.run([sys.executable, "-c", "import demucs"],
+                       capture_output=True, timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        missing.append("demucs")
     if missing:
         print(f"\n  Missing dependencies: {', '.join(missing)}")
         print("  Run:  pip install demucs yt-dlp\n")
