@@ -368,29 +368,43 @@ header {
 /* Next line — visible "preview" using same font as current */
 .overlay-next {
   font-family: 'Bebas Neue', sans-serif;
-  font-size: 26px;
+  font-size: calc(var(--lyric-size) * 0.54);
   letter-spacing: 1.5px;
-  color: rgba(255,255,255,0.36);
+  color: rgba(255,255,255,0.32);
   text-shadow: 0 2px 10px rgba(0,0,0,0.7);
-  min-height: 30px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 1px;
+  min-height: calc(var(--lyric-size) * 0.6);
+  white-space: normal;
+  word-break: break-word;
+  margin-top: 4px;
+  transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+/* "Approaching" state: next line brightens and pulses gently
+   when it's 2.5 s or less from starting — classic karaoke cue */
+@keyframes nextLinePulse {
+  0%, 100% { opacity: 0.55; }
+  50%       { opacity: 0.9;  }
+}
+.overlay-next.approaching {
+  color: rgba(255,255,255,0.72);
+  text-shadow:
+    0 0 22px rgba(255,255,255,0.25),
+    0 2px 10px rgba(0,0,0,0.8);
+  animation: nextLinePulse 0.9s ease-in-out infinite;
 }
 
 /* Next-next line — distant, very small */
 .overlay-next2 {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: calc(var(--lyric-size) * 0.30);
+  letter-spacing: 1px;
   font-weight: 400;
-  color: rgba(255,255,255,0.14);
-  min-height: 16px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: 0.2px;
+  color: rgba(255,255,255,0.13);
+  min-height: calc(var(--lyric-size) * 0.34);
+  white-space: normal;
+  word-break: break-word;
   margin-top: 3px;
+  transition: color 0.25s ease;
 }
 
 /* Fullscreen button */
@@ -745,9 +759,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 .video-wrapper:fullscreen .lyrics-overlay { padding: 100px 48px 36px; }
 .video-wrapper:fullscreen .overlay-word-base,
 .video-wrapper:fullscreen .overlay-word-fill { font-size: calc(var(--lyric-size) * 1.35); }
-.video-wrapper:fullscreen .overlay-prev { font-size: 14px; }
-.video-wrapper:fullscreen .overlay-next { font-size: calc(26px * 1.35); }
-.video-wrapper:fullscreen .overlay-next2 { font-size: 16px; }
+.video-wrapper:fullscreen .overlay-prev  { font-size: calc(var(--lyric-size) * 0.32); }
+.video-wrapper:fullscreen .overlay-next  { font-size: calc(var(--lyric-size) * 0.72); }
+.video-wrapper:fullscreen .overlay-next2 { font-size: calc(var(--lyric-size) * 0.38); }
 </style>
 </head>
 <body>
@@ -1493,6 +1507,16 @@ function tick() {
   if (idx >= 0 && lyrics[idx]) {
     updateKaraokeWipe(t, idx);
   }
+
+  // "Approaching" cue: brighten + pulse the next-line preview when
+  // it's 2.5 s or less from starting — gives singers time to prepare.
+  const nextEl = document.getElementById('overlayNext');
+  if (nextEl && lyrics[idx + 1]) {
+    const gap = lyrics[idx + 1].time - t;
+    nextEl.classList.toggle('approaching', gap > 0 && gap <= 2.5);
+  } else if (nextEl) {
+    nextEl.classList.remove('approaching');
+  }
 }
 
 function getActiveIndex(t) {
@@ -1837,7 +1861,7 @@ function clearOverlay() {
       <span class="overlay-word-base" style="color:rgba(255,255,255,0.1)">♪</span>
       <span class="overlay-word-fill">♪</span>
     </span>`;
-  if (nextEl) nextEl.textContent = '';
+  if (nextEl) { nextEl.textContent = ''; nextEl.classList.remove('approaching'); }
   const next2El = document.getElementById('overlayNext2');
   if (next2El) next2El.textContent = '';
 }
