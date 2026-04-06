@@ -354,6 +354,116 @@ body.stage-mode .km-exit-hint.faded { opacity: 0; }
   opacity: 0.55;
   margin-top: -4px;
 }
+.placeholder-divider {
+  display: flex; align-items: center; gap: 10px;
+  width: min(320px, 80%); color: var(--muted); font-size: 11px;
+  margin: 2px 0;
+}
+.placeholder-divider::before, .placeholder-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+.audio-upload-label {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 1px dashed var(--border);
+  border-radius: 8px; padding: 9px 20px;
+  color: var(--muted); font-size: 13px; cursor: pointer;
+  transition: all 0.18s;
+}
+.audio-upload-label:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Audio display (replaces placeholder when file loaded) ── */
+.audio-display {
+  display: none;
+  position: absolute; inset: 0;
+  background: var(--surface);
+  flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px; padding: 24px;
+  z-index: 2;
+}
+.audio-display.active { display: flex; }
+
+/* Animated equalizer bars */
+.audio-viz {
+  display: flex; align-items: flex-end; gap: 4px; height: 36px;
+}
+.audio-viz span {
+  display: block; width: 4px; border-radius: 2px;
+  background: var(--accent); opacity: 0.6;
+  animation: vizBar 1.1s ease-in-out infinite;
+  transform-origin: bottom;
+}
+.audio-viz span:nth-child(1)  { animation-delay: 0.0s; --h: 40%; }
+.audio-viz span:nth-child(2)  { animation-delay: 0.15s; --h: 70%; }
+.audio-viz span:nth-child(3)  { animation-delay: 0.05s; --h: 90%; }
+.audio-viz span:nth-child(4)  { animation-delay: 0.2s;  --h: 55%; }
+.audio-viz span:nth-child(5)  { animation-delay: 0.1s;  --h: 80%; }
+.audio-viz span:nth-child(6)  { animation-delay: 0.25s; --h: 50%; }
+.audio-viz span:nth-child(7)  { animation-delay: 0.08s; --h: 75%; }
+.audio-viz span:nth-child(8)  { animation-delay: 0.18s; --h: 45%; }
+.audio-viz span:nth-child(9)  { animation-delay: 0.12s; --h: 65%; }
+.audio-viz span:nth-child(10) { animation-delay: 0.22s; --h: 35%; }
+@keyframes vizBar {
+  0%, 100% { height: 20%; }
+  50%       { height: var(--h, 60%); }
+}
+/* Pause viz when audio is paused */
+.audio-display.paused .audio-viz span { animation-play-state: paused; height: 20%; }
+
+.audio-file-name {
+  font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500;
+  color: var(--text); max-width: 90%; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; text-align: center;
+}
+.audio-player-row {
+  display: flex; align-items: center; gap: 10px; width: min(480px, 90%);
+}
+.audio-play-btn {
+  flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%;
+  background: var(--accent); color: #000; border: none;
+  font-size: 12px; cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  transition: opacity 0.15s;
+}
+.audio-play-btn:hover { opacity: 0.85; }
+.audio-progress {
+  flex: 1; accent-color: var(--accent); cursor: pointer;
+}
+.audio-time {
+  font-family: monospace; font-size: 11px; color: var(--muted);
+  white-space: nowrap;
+}
+.audio-search-row {
+  display: flex; gap: 8px; width: min(480px, 90%);
+}
+.audio-search-input {
+  flex: 1; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; color: var(--text); font-family: 'DM Sans', sans-serif;
+  font-size: 12px; padding: 7px 11px; outline: none;
+  transition: border-color 0.18s;
+}
+.audio-search-input::placeholder { color: var(--muted); }
+.audio-search-input:focus { border-color: var(--accent); }
+.audio-search-btn {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; color: var(--text); font-family: 'DM Sans', sans-serif;
+  font-size: 12px; padding: 7px 14px; cursor: pointer;
+  transition: all 0.15s; white-space: nowrap;
+}
+.audio-search-btn:hover { border-color: var(--accent); color: var(--accent); }
+.audio-close-btn {
+  background: transparent; border: none; color: var(--muted);
+  font-size: 11px; cursor: pointer; margin-top: -6px;
+  transition: color 0.15s;
+}
+.audio-close-btn:hover { color: #ff5555; }
+
+/* Vocal reduction control */
+.vocal-reduction-note {
+  font-size: 10px; color: var(--muted); margin-top: 5px;
+  font-style: italic; opacity: 0.7;
+}
+#vocalReductionSlider:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ── Cinematic 3-line overlay ── */
 .lyrics-overlay {
@@ -988,7 +1098,34 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
           <button class="placeholder-go-btn" id="placeholderGoBtn">Go</button>
         </div>
         <span class="placeholder-hint">or paste anywhere on the page</span>
+        <div class="placeholder-divider"><span>or</span></div>
+        <label class="audio-upload-label" id="audioUploadLabel">
+          <input type="file" id="audioFileInput" accept="audio/*" hidden>
+          Upload Audio File
+        </label>
+        <span class="placeholder-hint">MP3, WAV, FLAC · with vocal reduction</span>
       </div>
+
+      <!-- Audio file player (shown instead of YouTube when file loaded) -->
+      <div class="audio-display" id="audioDisplay">
+        <div class="audio-viz" id="audioViz">
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="audio-file-name" id="audioFileName">—</div>
+        <div class="audio-player-row">
+          <button class="audio-play-btn" id="audioPlayBtn">&#9654;</button>
+          <input type="range" class="audio-progress" id="audioProgress" value="0" min="0" step="0.01">
+          <span class="audio-time" id="audioTime">0:00 / 0:00</span>
+        </div>
+        <div class="audio-search-row">
+          <input type="text" class="audio-search-input" id="audioSearchInput"
+                 placeholder="Artist – Song title (for lyrics)" autocomplete="off" spellcheck="false" />
+          <button class="audio-search-btn" id="audioSearchBtn">Get Lyrics</button>
+        </div>
+        <button class="audio-close-btn" id="audioCloseBtn" title="Back to YouTube mode">✕ Close</button>
+      </div>
+      <audio id="audioEl" preload="auto"></audio>
 
       <!-- 4-line cinematic overlay -->
       <div class="lyrics-overlay" id="lyricsOverlay">
@@ -1069,6 +1206,15 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
         <input type="range" id="sizeSlider" min="20" max="72" step="2" value="38">
       </div>
 
+      <!-- Vocal reduction — only active in audio file mode -->
+      <div class="ctrl-group" id="vocalReductionGroup">
+        <label>Vocal Reduction <span class="val" id="vocalReductionVal">0%</span></label>
+        <input type="range" id="vocalReductionSlider" min="0" max="100" step="1" value="0">
+        <div class="vocal-reduction-note" id="vocalReductionNote">
+          Upload an audio file to enable vocal reduction
+        </div>
+      </div>
+
       <div class="ctrl-group">
         <label>Lyric Color</label>
         <div class="color-swatches">
@@ -1100,6 +1246,12 @@ let currentVideoId = null;    // tracks loaded video to detect changes (BUG FIX)
 // Queue
 let queue      = [];          // [{id, title, thumb}]
 let queueIndex = -1;
+
+// ── Audio file mode (Option A — phase cancellation) ───────────────
+let sourceMode    = 'youtube';   // 'youtube' | 'audio'
+let audioCtx      = null;
+let dryGainNode   = null;
+let wetGainNode   = null;
 
 // ══════════════════════════════════════════════════════════════════
 //  YouTube IFrame API bootstrap
@@ -1678,8 +1830,16 @@ function stopSync() {
 }
 
 function tick() {
-  if (!player || !player.getCurrentTime) return;
-  const t   = player.getCurrentTime() + syncOffset;
+  let rawTime;
+  if (sourceMode === 'audio') {
+    const audioEl = document.getElementById('audioEl');
+    if (!audioEl) return;
+    rawTime = audioEl.currentTime;
+  } else {
+    if (!player || !player.getCurrentTime) return;
+    rawTime = player.getCurrentTime();
+  }
+  const t = rawTime + syncOffset;
   const idx = getActiveIndex(t);
 
   if (idx !== currentIndex) {
@@ -2309,6 +2469,232 @@ function switchTab(name) {
   if (btn)     btn.classList.add('active');
   if (content) content.classList.add('active');
 }
+
+// ══════════════════════════════════════════════════════════════════
+//  Audio File Mode — phase cancellation vocal reduction
+// ══════════════════════════════════════════════════════════════════
+
+function setupAudioContext(audioEl) {
+  // Tear down any previous context
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source   = audioCtx.createMediaElementSource(audioEl);
+  const splitter = audioCtx.createChannelSplitter(2);
+  const merger   = audioCtx.createChannelMerger(2);
+
+  // Phase-cancelled (wet) signal: output = L − R in both channels.
+  // This cancels anything panned dead-center, which is typically vocals.
+  const posGain = audioCtx.createGain();  posGain.gain.value  =  1;
+  const negGain = audioCtx.createGain();  negGain.gain.value  = -1;
+
+  source.connect(splitter);
+  // L channel (index 0) → positive contribution
+  splitter.connect(posGain, 0);
+  // R channel (index 1) → negative contribution (inverted)
+  splitter.connect(negGain, 1);
+  // Both feed into left AND right outputs → gives mono (L−R) in stereo
+  posGain.connect(merger, 0, 0);
+  negGain.connect(merger, 0, 0);
+  posGain.connect(merger, 0, 1);
+  negGain.connect(merger, 0, 1);
+
+  wetGainNode = audioCtx.createGain();
+  wetGainNode.gain.value = 0;        // starts silent
+  merger.connect(wetGainNode);
+
+  // Dry signal: original stereo, unchanged
+  dryGainNode = audioCtx.createGain();
+  dryGainNode.gain.value = 1;
+  source.connect(dryGainNode);
+
+  // Both paths meet at destination
+  dryGainNode.connect(audioCtx.destination);
+  wetGainNode.connect(audioCtx.destination);
+}
+
+function setVocalReduction(pct) {
+  // pct: 0–100
+  // At 100% we run fully wet (phase cancelled) but boost gain ×1.4
+  // to compensate for the energy lost by the subtraction.
+  // We also keep a small amount of dry to preserve bass & kick.
+  const wet = pct / 100;
+  const dry = 1 - wet * 0.85;       // never go fully silent on dry
+  const makeupGain = 1 + wet * 0.4; // restore lost loudness
+  if (dryGainNode) dryGainNode.gain.value = dry;
+  if (wetGainNode) wetGainNode.gain.value = wet * makeupGain;
+  document.getElementById('vocalReductionVal').textContent = pct + '%';
+  document.getElementById('vocalReductionSlider').value    = pct;
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  return m + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+}
+
+function enterAudioMode(file) {
+  sourceMode = 'audio';
+  const audioEl   = document.getElementById('audioEl');
+  const display   = document.getElementById('audioDisplay');
+  const placeholder = document.getElementById('videoPlaceholder');
+  const nameEl    = document.getElementById('audioFileName');
+  const progress  = document.getElementById('audioProgress');
+  const timeEl    = document.getElementById('audioTime');
+  const playBtn   = document.getElementById('audioPlayBtn');
+  const slider    = document.getElementById('vocalReductionSlider');
+  const note      = document.getElementById('vocalReductionNote');
+
+  // Load file into audio element
+  const url = URL.createObjectURL(file);
+  audioEl.src = url;
+  audioEl.load();
+
+  // Set up Web Audio API chain
+  setupAudioContext(audioEl);
+
+  // Update UI
+  nameEl.textContent = file.name.replace(/\.[^.]+$/, ''); // strip extension
+  placeholder.style.display = 'none';
+  display.classList.add('active');
+  display.classList.add('paused');
+
+  // Enable vocal reduction slider
+  slider.disabled = false;
+  note.textContent = 'Phase cancellation · works best on stereo recordings';
+  setVocalReduction(parseInt(slider.value));
+
+  // Pre-fill search with filename (strip extension + common noise)
+  const searchInput = document.getElementById('audioSearchInput');
+  const guessName = file.name.replace(/\.[^.]+$/, '').replace(/[_\-]+/g, ' ').trim();
+  searchInput.value = guessName;
+
+  // Sync progress bar
+  audioEl.addEventListener('timeupdate', () => {
+    if (!audioEl.duration) return;
+    progress.max   = audioEl.duration;
+    progress.value = audioEl.currentTime;
+    timeEl.textContent = fmtTime(audioEl.currentTime) + ' / ' + fmtTime(audioEl.duration);
+  });
+
+  audioEl.addEventListener('play',  () => {
+    playBtn.innerHTML = '&#9646;&#9646;';
+    display.classList.remove('paused');
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    startSync();
+  });
+  audioEl.addEventListener('pause', () => {
+    playBtn.innerHTML = '&#9654;';
+    display.classList.add('paused');
+    stopSync();
+  });
+  audioEl.addEventListener('ended', () => {
+    playBtn.innerHTML = '&#9654;';
+    display.classList.add('paused');
+    stopSync();
+  });
+
+  // Show overlay
+  const overlay = document.getElementById('lyricsOverlay');
+  if (overlay && lyrics.length) {
+    overlay.classList.add('visible');
+    overlay.classList.toggle('centered-mode', displayMode === 'centered');
+  }
+}
+
+function exitAudioMode() {
+  sourceMode = 'youtube';
+  const audioEl   = document.getElementById('audioEl');
+  const display   = document.getElementById('audioDisplay');
+  const placeholder = document.getElementById('videoPlaceholder');
+  const slider    = document.getElementById('vocalReductionSlider');
+  const note      = document.getElementById('vocalReductionNote');
+
+  stopSync();
+  audioEl.pause();
+  audioEl.src = '';
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+
+  display.classList.remove('active', 'paused');
+  placeholder.style.display = '';
+  lyrics       = [];
+  currentIndex = -1;
+  clearOverlay();
+  showPanel('empty');
+
+  // Disable vocal reduction slider
+  slider.disabled = true;
+  slider.value    = 0;
+  note.textContent = 'Upload an audio file to enable vocal reduction';
+  document.getElementById('vocalReductionVal').textContent = '0%';
+}
+
+// ── Audio file event listeners ────────────────────────────────────
+document.getElementById('audioFileInput').addEventListener('change', function() {
+  if (this.files && this.files[0]) enterAudioMode(this.files[0]);
+});
+
+// Drag-and-drop onto the placeholder
+const placeholder = document.getElementById('videoPlaceholder');
+placeholder.addEventListener('dragover', e => { e.preventDefault(); placeholder.style.borderColor = 'var(--accent)'; });
+placeholder.addEventListener('dragleave', () => { placeholder.style.borderColor = ''; });
+placeholder.addEventListener('drop', e => {
+  e.preventDefault();
+  placeholder.style.borderColor = '';
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('audio/')) enterAudioMode(file);
+});
+
+document.getElementById('audioPlayBtn').addEventListener('click', () => {
+  const audioEl = document.getElementById('audioEl');
+  if (audioEl.paused) {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    audioEl.play();
+  } else {
+    audioEl.pause();
+  }
+});
+
+document.getElementById('audioProgress').addEventListener('input', function() {
+  const audioEl = document.getElementById('audioEl');
+  audioEl.currentTime = parseFloat(this.value);
+});
+
+document.getElementById('audioCloseBtn').addEventListener('click', exitAudioMode);
+
+document.getElementById('audioSearchBtn').addEventListener('click', async () => {
+  const raw  = document.getElementById('audioSearchInput').value.trim();
+  if (!raw) return;
+  const btn  = document.getElementById('audioSearchBtn');
+  btn.textContent = '…';
+  btn.disabled    = true;
+
+  // Parse "Artist – Title" or just use full string as title
+  const dash   = raw.match(/^(.+?)\s[-–]\s(.+)$/);
+  const artist = dash ? dash[1].trim() : '';
+  const title  = dash ? dash[2].trim() : raw;
+
+  lyrics       = await fetchLyrics(raw, null);
+  currentIndex = -1;
+
+  if (lyrics.length) {
+    renderLyricsPanel();
+    document.getElementById('songTitle').textContent = raw;
+    document.getElementById('statusRow').style.display = 'flex';
+    const overlay = document.getElementById('lyricsOverlay');
+    overlay.classList.add('visible');
+    overlay.classList.toggle('centered-mode', displayMode === 'centered');
+  }
+
+  btn.textContent = 'Get Lyrics';
+  btn.disabled    = false;
+});
+
+document.getElementById('vocalReductionSlider').addEventListener('input', function() {
+  setVocalReduction(parseInt(this.value));
+});
+
+// Disable vocal reduction slider on page load (no audio loaded yet)
+document.getElementById('vocalReductionSlider').disabled = true;
 
 // ══════════════════════════════════════════════════════════════════
 //  Events: Controls
