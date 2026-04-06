@@ -898,7 +898,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 <body>
 
 <!-- Karaoke mode exit hint — only visible in stage mode -->
-<div class="km-exit-hint" id="kmExitHint">Press <kbd>F</kbd> or <kbd>Esc</kbd> to exit Stage Mode</div>
+<div class="km-exit-hint" id="kmExitHint">Press <kbd>F</kbd> or <kbd>Esc</kbd> to exit Full Screen</div>
 
 <!-- ── Header ── -->
 <header>
@@ -912,12 +912,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
     <div class="status-dot"></div>
     <span id="statusText">Ready</span>
   </div>
-  <button class="karaoke-mode-btn" id="karaokeModeBtn" title="Karaoke mode (F)">
+  <button class="karaoke-mode-btn" id="karaokeModeBtn" title="Full Screen mode (F)">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
       <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
     </svg>
-    <span>Stage</span>
+    <span>Full Screen</span>
   </button>
   <button class="panel-toggle-btn" id="panelToggleBtn" title="Hide panel">
     <!-- sidebar icon: rectangle with right-panel column -->
@@ -944,7 +944,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
     <div class="video-wrapper" id="videoWrapper">
 
       <div class="video-placeholder" id="videoPlaceholder">
-        <div class="icon">🎤</div>
+        <div class="icon">▶</div>
         <span>Paste a YouTube URL above to get started</span>
       </div>
 
@@ -961,7 +961,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 
     <div id="statusRow" style="display:none">
       <div class="song-info-bar">
-        <span class="song-icon">♫</span>
+        <span class="song-icon">♩</span>
         <span id="songTitle">—</span>
       </div>
     </div>
@@ -978,7 +978,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
     <!-- Lyrics tab -->
     <div id="tab-lyrics" class="tab-content active">
       <div class="empty-state">
-        <div class="empty-icon">🎵</div>
+        <div class="empty-icon">♩</div>
         <p>Load a song and lyrics will<br>scroll here in sync</p>
       </div>
     </div>
@@ -1003,9 +1003,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
       <div class="ctrl-group">
         <label>Display Mode</label>
         <div class="mode-btns">
-          <button class="mode-btn" data-mode="karaoke">🎤 Overlay</button>
-          <button class="mode-btn active" data-mode="centered">📺 Centered</button>
-          <button class="mode-btn" data-mode="classic">☰ Panel</button>
+          <button class="mode-btn" data-mode="karaoke">Overlay</button>
+          <button class="mode-btn active" data-mode="centered">Centered</button>
+          <button class="mode-btn" data-mode="classic">Panel</button>
         </div>
       </div>
 
@@ -2048,7 +2048,7 @@ function showPanel(type, msg) {
   if (type === 'loading') {
     panel.innerHTML = `<div class="empty-state"><div class="spinner"></div><p>Finding lyrics…</p></div>`;
   } else {
-    panel.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>${escHtml(msg || '')}</p></div>`;
+    panel.innerHTML = `<div class="empty-state"><div class="empty-icon">—</div><p>${escHtml(msg || '')}</p></div>`;
   }
 }
 
