@@ -318,6 +318,42 @@ body.stage-mode .km-exit-hint.faded { opacity: 0; }
   font-size: 14px;
 }
 .video-placeholder .icon { font-size: 40px; opacity: 0.2; }
+.placeholder-input-row {
+  display: flex; gap: 8px; width: min(420px, 88%);
+}
+.placeholder-url-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  padding: 9px 13px;
+  outline: none;
+  transition: border-color 0.18s;
+}
+.placeholder-url-input::placeholder { color: var(--muted); }
+.placeholder-url-input:focus { border-color: var(--accent); }
+.placeholder-go-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.placeholder-go-btn:hover { opacity: 0.85; }
+.placeholder-hint {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.55;
+  margin-top: -4px;
+}
 
 /* ── Cinematic 3-line overlay ── */
 .lyrics-overlay {
@@ -945,7 +981,13 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 
       <div class="video-placeholder" id="videoPlaceholder">
         <div class="icon">▶</div>
-        <span>Paste a YouTube URL above to get started</span>
+        <span>Paste a YouTube URL to get started</span>
+        <div class="placeholder-input-row">
+          <input type="text" class="placeholder-url-input" id="placeholderInput"
+                 placeholder="https://youtube.com/watch?v=…" autocomplete="off" spellcheck="false" />
+          <button class="placeholder-go-btn" id="placeholderGoBtn">Go</button>
+        </div>
+        <span class="placeholder-hint">or paste anywhere on the page</span>
       </div>
 
       <!-- 4-line cinematic overlay -->
@@ -2190,6 +2232,35 @@ function escHtml(s) {
 document.getElementById('loadBtn').addEventListener('click', handleLoad);
 document.getElementById('urlInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') handleLoad();
+});
+
+// ── Placeholder input (inside the blank video box) ────────────────
+document.getElementById('placeholderInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') handleLoadFromPlaceholder();
+});
+document.getElementById('placeholderGoBtn').addEventListener('click', handleLoadFromPlaceholder);
+
+function handleLoadFromPlaceholder() {
+  const raw = document.getElementById('placeholderInput').value.trim();
+  if (!raw) return;
+  document.getElementById('urlInput').value = raw;
+  handleLoad();
+}
+
+// ── Global paste: if nothing is focused, treat paste as a URL load ─
+document.addEventListener('paste', e => {
+  const active = document.activeElement;
+  const isInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+  if (isInput) return;                          // let normal inputs handle their own paste
+  if (document.getElementById('ytPlayer')) return; // video already loaded — don't hijack
+
+  const text = e.clipboardData?.getData('text') || '';
+  const id   = extractVideoId(text);
+  if (!id) return;
+
+  e.preventDefault();
+  document.getElementById('urlInput').value = text;
+  handleLoad();
 });
 
 function handleLoad() {
