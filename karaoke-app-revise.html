@@ -331,6 +331,61 @@ body.stage-mode .km-exit-hint.faded { opacity: 0; }
 }
 .lyrics-overlay.visible { display: block; }
 
+/* ── Centered (traditional karaoke) mode ── */
+.lyrics-overlay.centered-mode {
+  /* Override bottom-anchored layout — sit at 58% down the video */
+  bottom: auto;
+  top: 58%;
+  transform: translateY(-50%);
+  padding: 0;
+  background: none;
+  /* Stack children centered */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+/* Dark pill background behind the text block */
+.lyrics-overlay.centered-mode::before {
+  content: '';
+  position: absolute;
+  inset: -14px -0px;
+  background: rgba(0,0,0,0.72);
+  z-index: -1;
+}
+/* Current line: center-align the words */
+.lyrics-overlay.centered-mode .overlay-current-wrap {
+  justify-content: center;
+  text-align: center;
+  padding: 10px 28px 4px;
+  min-height: unset;
+  margin-bottom: 0;
+}
+/* Next line: centered */
+.lyrics-overlay.centered-mode .overlay-next {
+  text-align: center;
+  padding: 0 28px 10px;
+  margin-top: 2px;
+  width: 100%;
+}
+/* Next-next: centered */
+.lyrics-overlay.centered-mode .overlay-next2 {
+  text-align: center;
+  padding: 0 28px 6px;
+  width: 100%;
+}
+/* Hide prev line — traditional machines only show current + next */
+.lyrics-overlay.centered-mode .overlay-prev { display: none; }
+
+/* Fullscreen + stage-mode adjustments for centered mode */
+.video-wrapper:fullscreen .lyrics-overlay.centered-mode,
+body.stage-mode .lyrics-overlay.centered-mode {
+  top: 60%;
+}
+body.stage-mode .lyrics-overlay.centered-mode::before {
+  inset: -18px 0px;
+}
+
 /* Previous line */
 .overlay-prev {
   font-family: 'DM Sans', sans-serif;
@@ -948,8 +1003,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
       <div class="ctrl-group">
         <label>Display Mode</label>
         <div class="mode-btns">
-          <button class="mode-btn active" data-mode="karaoke">🎤 Karaoke</button>
-          <button class="mode-btn" data-mode="classic">Classic</button>
+          <button class="mode-btn active" data-mode="karaoke">🎤 Overlay</button>
+          <button class="mode-btn" data-mode="centered">📺 Centered</button>
+          <button class="mode-btn" data-mode="classic">☰ Panel</button>
         </div>
       </div>
 
@@ -1500,8 +1556,10 @@ async function onPlayerState(e) {
 
       if (lyrics.length) {
         renderLyricsPanel();
-        if (displayMode === 'karaoke') {
-          document.getElementById('lyricsOverlay').classList.add('visible');
+        const overlay = document.getElementById('lyricsOverlay');
+        if (displayMode === 'karaoke' || displayMode === 'centered') {
+          overlay.classList.add('visible');
+          overlay.classList.toggle('centered-mode', displayMode === 'centered');
         }
       }
 
@@ -2232,7 +2290,9 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
     displayMode = this.dataset.mode;
     const overlay = document.getElementById('lyricsOverlay');
     if (!overlay) return;
-    overlay.classList.toggle('visible', displayMode === 'karaoke');
+    const showOverlay = displayMode === 'karaoke' || displayMode === 'centered';
+    overlay.classList.toggle('visible', showOverlay);
+    overlay.classList.toggle('centered-mode', displayMode === 'centered');
   });
 });
 
@@ -2250,8 +2310,9 @@ document.getElementById('fullscreenBtn').addEventListener('click', () => {
 
 document.addEventListener('fullscreenchange', () => {
   const overlay = document.getElementById('lyricsOverlay');
-  if (overlay && displayMode === 'karaoke' && lyrics.length) {
+  if (overlay && (displayMode === 'karaoke' || displayMode === 'centered') && lyrics.length) {
     overlay.classList.add('visible');
+    overlay.classList.toggle('centered-mode', displayMode === 'centered');
   }
 });
 
@@ -2264,7 +2325,10 @@ function enterStageMode() {
   document.body.classList.add('stage-mode');
   // Ensure overlay is visible and lyrics show
   const overlay = document.getElementById('lyricsOverlay');
-  if (overlay && lyrics.length) overlay.classList.add('visible');
+  if (overlay && lyrics.length) {
+    overlay.classList.add('visible');
+    overlay.classList.toggle('centered-mode', displayMode === 'centered');
+  }
   // Show the exit hint, then fade it out after 3s
   const hint = document.getElementById('kmExitHint');
   if (hint) {
