@@ -1168,6 +1168,18 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
         </div>
         <button class="stems-toggle-btn" id="stemsToggleBtn">Enable Vocal Reduction</button>
         <div id="stemsStatusMsg" style="display:none"></div>
+
+        <!-- Vocal Mix slider — only meaningful when stems are active -->
+        <div id="vocalMixGroup" style="margin-top:14px; display:none">
+          <label style="display:block; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:8px">
+            Vocal Mix <span class="val" id="vocalMixVal">0%</span>
+          </label>
+          <input type="range" id="vocalMixSlider" min="0" max="100" step="5" value="0">
+          <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-top:4px; opacity:0.6">
+            <span>No vocals</span>
+            <span>Full vocals</span>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -2681,6 +2693,10 @@ function exitStemsMode() {
 
   if (player && player.setVolume) player.setVolume(100);
 
+  // Reset vocal mix slider
+  const mixSlider = document.getElementById('vocalMixSlider');
+  if (mixSlider) mixSlider.value = 0;
+
   setStemsUI('off', 'Off');
 }
 
@@ -2695,6 +2711,9 @@ function setStemsUI(state, msg) {
   if (!btn) return;
   statusEl.classList.remove('stems-err');
 
+  const mixGroup = document.getElementById('vocalMixGroup');
+  const mixSlider = document.getElementById('vocalMixSlider');
+
   switch (state) {
     case 'off':
       val.textContent  = 'Off';
@@ -2702,6 +2721,9 @@ function setStemsUI(state, msg) {
       btn.className    = 'stems-toggle-btn';
       statusEl.style.display = 'none';
       if (overlay) overlay.style.display = 'none';
+      if (mixGroup)  mixGroup.style.display = 'none';
+      // Reset slider for next activation
+      if (mixSlider) { mixSlider.value = 0; document.getElementById('vocalMixVal').textContent = '0%'; }
       break;
 
     case 'loading':
@@ -2715,6 +2737,7 @@ function setStemsUI(state, msg) {
         overlay.style.display = 'flex';
         if (msgEl) msgEl.textContent = msg;
       }
+      if (mixGroup) mixGroup.style.display = 'none';
       break;
 
     case 'active':
@@ -2722,8 +2745,9 @@ function setStemsUI(state, msg) {
       btn.textContent  = 'Disable Vocal Reduction';
       btn.className    = 'stems-toggle-btn stems-on';
       statusEl.style.display = 'block';
-      statusEl.textContent   = 'Vocals removed — instrumental playing';
+      statusEl.textContent   = 'Vocal Mix: drag slider to add vocals back';
       if (overlay) overlay.style.display = 'none';
+      if (mixGroup) mixGroup.style.display = 'block';
       break;
 
     case 'error':
@@ -2734,6 +2758,7 @@ function setStemsUI(state, msg) {
       statusEl.classList.add('stems-err');
       statusEl.textContent   = msg;
       if (overlay) overlay.style.display = 'none';
+      if (mixGroup) mixGroup.style.display = 'none';
       break;
   }
 }
@@ -2743,6 +2768,24 @@ document.getElementById('stemsToggleBtn').addEventListener('click', toggleStemsM
 document.getElementById('stemsCancelBtn').addEventListener('click', () => {
   clearInterval(stemsPollTimer); stemsPollTimer = null;
   setStemsUI('off', 'Off');
+});
+
+// ── Vocal Mix slider ──────────────────────────────────────────────
+// Blends original YouTube audio (vocals) back in alongside the stem.
+// pct = 0  → YT muted, stem at full (pure instrumental)
+// pct = 50 → YT at 50%, stem at 100% (some vocals)
+// pct = 100 → YT at 100%, stems off (original sound)
+document.getElementById('vocalMixSlider').addEventListener('input', function() {
+  const pct = parseInt(this.value);
+  document.getElementById('vocalMixVal').textContent = pct + '%';
+
+  if (!stemsActive) return;
+
+  // YouTube volume: scale 0 → pct (letting vocals bleed back in)
+  if (player && player.setVolume) player.setVolume(pct);
+
+  // Stem volume: always full (the instrumental is always present)
+  if (stemsAudio) stemsAudio.volume = 1.0;
 });
 
 // ══════════════════════════════════════════════════════════════════
