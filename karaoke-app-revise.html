@@ -479,7 +479,7 @@ body.stage-mode .lyrics-overlay.centered-mode::before {
   font-size: var(--lyric-size);
   letter-spacing: 1.5px;
   display: block;
-  transition: width 55ms linear;
+  transition: width 40ms linear;
 }
 
 /* Scan-line glow: a thin bright bar that rides the fill frontier.
@@ -497,7 +497,7 @@ body.stage-mode .lyrics-overlay.centered-mode::before {
   box-shadow: 0 0 10px 6px rgba(255,255,255,0.40);
   opacity: 0;
   /* Match fill transition so the bar tracks exactly */
-  transition: left 55ms linear, opacity 0.08s;
+  transition: left 40ms linear, opacity 0.08s;
   z-index: 5;
   pointer-events: none;
 }
@@ -1284,6 +1284,11 @@ let player       = null;
 let lyrics       = [];        // [{time: float, text: string}]
 let currentIndex = -1;
 let syncOffset   = 0;
+// WIPE_LEAD: how many seconds before a word's Kugou timestamp the fill
+// starts moving.  Compensates for CSS transition time (~40 ms) + one
+// RAF frame (~16 ms), so the fill visually reaches the word boundary
+// exactly as the consonant sounds rather than trailing it.
+const WIPE_LEAD  = 0.055;
 let pollTimer    = null;
 let displayMode  = 'centered';
 let currentVideoId = null;    // tracks loaded video to detect changes (BUG FIX)
@@ -1860,18 +1865,27 @@ function onPlayerError(e) {
 // ══════════════════════════════════════════════════════════════════
 //  Sync engine
 //
-//  Polls YouTube's getCurrentTime() every 50ms directly — no
-//  interpolation, no drift. A CSS transition on the fill element
-//  smooths the wipe between polls so it doesn't stutter.
+//  Uses requestAnimationFrame (~60 fps / 16 ms) instead of
+//  setInterval so wipe positions are re-calculated every screen
+//  frame.  Combined with a reduced CSS transition and WIPE_LEAD
+//  offset this eliminates the visible lag between consonant onset
+//  and the fill bar reaching that character position.
 // ══════════════════════════════════════════════════════════════════
+let rafId = null;   // requestAnimationFrame handle (replaces pollTimer)
+
 function startSync() {
   stopSync();
-  tick();                                  // immediate first frame
-  pollTimer = setInterval(tick, 50);
+  const loop = () => {
+    tick();
+    rafId = requestAnimationFrame(loop);
+  };
+  rafId = requestAnimationFrame(loop);
 }
 
+
 function stopSync() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (rafId)     { cancelAnimationFrame(rafId); rafId = null; }
+  if (pollTimer) { clearInterval(pollTimer);    pollTimer = null; }
 }
 
 function tick() {
@@ -2117,17 +2131,21 @@ function updateKaraokeWipe(t, idx) {
       const fill = wrap.querySelector('.overlay-word-fill');
       if (!fill) return;
 
-      const tStart = parseFloat(wrap.dataset.t);
-      let   tEnd   = parseFloat(wrap.dataset.tEnd);
+      const rawStart = parseFloat(wrap.dataset.t);
+      let   tEnd     = parseFloat(wrap.dataset.tEnd);
 
-      if (isNaN(tEnd) || tEnd <= tStart) {
-        tEnd = lyrics[idx + 1] ? lyrics[idx + 1].time : tStart + 1.5;
+      if (isNaN(tEnd) || tEnd <= rawStart) {
+        tEnd = lyrics[idx + 1] ? lyrics[idx + 1].time : rawStart + 1.5;
       }
 
-      if (isNaN(tStart)) {
+      if (isNaN(rawStart)) {
         setFillPct(wrap, fill, t >= line.time ? 100 : 0);
         return;
       }
+
+      // Pre-start the fill WIPE_LEAD seconds before the Kugou timestamp
+      // so that the CSS transition completes exactly as the consonant sounds.
+      const tStart = rawStart - WIPE_LEAD;
 
       if (t >= tEnd) {
         setFillPct(wrap, fill, 100);
@@ -2140,7 +2158,7 @@ function updateKaraokeWipe(t, idx) {
 
   } else {
     // ── Mode B: syllable-weighted fallback ────────────────────────
-    const lineStart     = line ? line.time : t;
+    const lineStart     = line ? line.time - WIPE_LEAD : t;
     const nextStart     = lyrics[idx + 1] ? lyrics[idx + 1].time : lineStart + 5;
     const gap           = nextStart - lineStart;
     const sweepDuration = Math.max(0.6, gap * 0.93);
