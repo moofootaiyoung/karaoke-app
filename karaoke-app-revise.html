@@ -929,6 +929,95 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 .video-wrapper:fullscreen .overlay-prev  { font-size: calc(var(--lyric-size) * 0.32); }
 .video-wrapper:fullscreen .overlay-next  { font-size: calc(var(--lyric-size) * 0.72); }
 .video-wrapper:fullscreen .overlay-next2 { font-size: calc(var(--lyric-size) * 0.38); }
+
+/* ══════════════════════════════════════════════════════════════
+   RETRO KARAOKE MODE — classic CDG machine aesthetic
+   • Solid deep-blue bar pinned to the bottom of the video
+   • Yellow unlit lyrics  →  cyan lit fill
+   • Horizontal scanlines, CRT border glow
+   • Two lines only (current + next), everything centered
+   ══════════════════════════════════════════════════════════════ */
+.lyrics-overlay.retro-mode {
+  bottom: 0; top: auto; transform: none;
+  padding: 14px 0 16px;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px, transparent 3px,
+      rgba(0,0,0,0.22) 3px, rgba(0,0,0,0.22) 4px
+    ),
+    #000e6e;
+  border-top: 3px solid #2255cc;
+  box-shadow: inset 0 6px 24px rgba(0,0,100,0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.lyrics-overlay.retro-mode::before { display: none; }
+
+.lyrics-overlay.retro-mode .overlay-current-wrap {
+  justify-content: center;
+  text-align: center;
+  padding: 6px 24px 2px;
+  min-height: unset;
+  margin-bottom: 0;
+}
+
+/* Unlit word: classic yellow */
+.lyrics-overlay.retro-mode .overlay-word-base {
+  color: #ffe84a;
+  text-shadow: 0 0 8px rgba(255,230,50,0.18), 0 1px 4px rgba(0,0,0,0.9);
+}
+
+/* Lit fill: cyan wipe */
+.lyrics-overlay.retro-mode .overlay-word-fill {
+  color: #00f0ff;
+  text-shadow:
+    0 0 18px rgba(0,240,255,0.75),
+    0 0  6px rgba(0,240,255,0.45),
+    0 1px 6px rgba(0,0,0,0.9);
+}
+
+/* Scan-line cursor: cyan */
+.lyrics-overlay.retro-mode .overlay-word-wrap::after {
+  background: #00f0ff;
+  box-shadow: 0 0 10px 5px rgba(0,240,255,0.55);
+}
+
+/* Next line */
+.lyrics-overlay.retro-mode .overlay-next {
+  color: rgba(255,255,255,0.52);
+  text-align: center;
+  padding: 2px 24px 8px;
+  width: 100%;
+  font-size: calc(var(--lyric-size) * 0.46);
+  text-shadow: none;
+  margin-top: 2px;
+  animation: none !important;
+}
+
+/* Hide lines not shown in retro */
+.lyrics-overlay.retro-mode .overlay-prev  { display: none; }
+.lyrics-overlay.retro-mode .overlay-next2 { display: none; }
+
+/* Stage + fullscreen: bigger text, still pinned at bottom */
+body.stage-mode .lyrics-overlay.retro-mode,
+.video-wrapper:fullscreen .lyrics-overlay.retro-mode {
+  padding: 18px 0 20px;
+  top: auto; bottom: 0; transform: none;
+}
+body.stage-mode .lyrics-overlay.retro-mode .overlay-word-base,
+body.stage-mode .lyrics-overlay.retro-mode .overlay-word-fill,
+.video-wrapper:fullscreen .lyrics-overlay.retro-mode .overlay-word-base,
+.video-wrapper:fullscreen .lyrics-overlay.retro-mode .overlay-word-fill {
+  font-size: calc(var(--lyric-size) * 1.15);
+}
+body.stage-mode .lyrics-overlay.retro-mode .overlay-next,
+.video-wrapper:fullscreen .lyrics-overlay.retro-mode .overlay-next {
+  font-size: calc(var(--lyric-size) * 0.56);
+}
 </style>
 </head>
 <body>
@@ -1047,6 +1136,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
         <div class="mode-btns">
           <button class="mode-btn" data-mode="karaoke">Overlay</button>
           <button class="mode-btn active" data-mode="centered">Centered</button>
+          <button class="mode-btn" data-mode="retro">Retro</button>
           <button class="mode-btn" data-mode="classic">Panel</button>
         </div>
       </div>
@@ -1598,11 +1688,7 @@ async function onPlayerState(e) {
 
       if (lyrics.length) {
         renderLyricsPanel();
-        const overlay = document.getElementById('lyricsOverlay');
-        if (displayMode === 'karaoke' || displayMode === 'centered') {
-          overlay.classList.add('visible');
-          overlay.classList.toggle('centered-mode', displayMode === 'centered');
-        }
+        applyOverlayMode(document.getElementById('lyricsOverlay'));
       }
 
       // Seek to beginning and resume; the resulting PLAYING event will
@@ -2354,16 +2440,22 @@ document.querySelectorAll('.swatch').forEach(sw => {
   });
 });
 
+// ── applyOverlayMode: single source of truth for overlay class state ──
+// Call whenever displayMode changes or the overlay needs to be refreshed.
+function applyOverlayMode(overlay) {
+  if (!overlay) return;
+  const show = displayMode === 'karaoke' || displayMode === 'centered' || displayMode === 'retro';
+  overlay.classList.toggle('visible',       show);
+  overlay.classList.toggle('centered-mode', displayMode === 'centered');
+  overlay.classList.toggle('retro-mode',    displayMode === 'retro');
+}
+
 document.querySelectorAll('.mode-btn').forEach(btn => {
   btn.addEventListener('click', function() {
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     this.classList.add('active');
     displayMode = this.dataset.mode;
-    const overlay = document.getElementById('lyricsOverlay');
-    if (!overlay) return;
-    const showOverlay = displayMode === 'karaoke' || displayMode === 'centered';
-    overlay.classList.toggle('visible', showOverlay);
-    overlay.classList.toggle('centered-mode', displayMode === 'centered');
+    applyOverlayMode(document.getElementById('lyricsOverlay'));
   });
 });
 
@@ -2380,11 +2472,7 @@ document.getElementById('fullscreenBtn').addEventListener('click', () => {
 });
 
 document.addEventListener('fullscreenchange', () => {
-  const overlay = document.getElementById('lyricsOverlay');
-  if (overlay && (displayMode === 'karaoke' || displayMode === 'centered') && lyrics.length) {
-    overlay.classList.add('visible');
-    overlay.classList.toggle('centered-mode', displayMode === 'centered');
-  }
+  if (lyrics.length) applyOverlayMode(document.getElementById('lyricsOverlay'));
 });
 
 // ══════════════════════════════════════════════════════════════════
@@ -2394,12 +2482,7 @@ let stageHintTimer = null;
 
 function enterStageMode() {
   document.body.classList.add('stage-mode');
-  // Ensure overlay is visible and lyrics show
-  const overlay = document.getElementById('lyricsOverlay');
-  if (overlay && lyrics.length) {
-    overlay.classList.add('visible');
-    overlay.classList.toggle('centered-mode', displayMode === 'centered');
-  }
+  if (lyrics.length) applyOverlayMode(document.getElementById('lyricsOverlay'));
   // Show the exit hint, then fade it out after 3s
   const hint = document.getElementById('kmExitHint');
   if (hint) {
