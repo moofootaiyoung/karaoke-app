@@ -1601,9 +1601,16 @@ async function fetchLyrics(title, duration) {
   const dash = clean.match(/^(.+?)\s[-–]\s(.+)$/);
   if (dash) { queryArtist = dash[1].trim(); queryTitle = dash[2].trim(); }
 
+  // Strip featured-artist annotations for the Kugou search query.
+  // "(feat. Travis Scott)" in the query confuses Kugou into returning
+  // songs by the featured artist instead of the main artist.
+  // We strip it only for the *search query*, keeping the full title for
+  // similarity checks so we still accept the right result.
+  const kugouTitle = queryTitle.replace(/\s*[\(\[](feat|ft|featuring)[.\s][^\)\]]*[\)\]]/gi, '').trim();
+
   // Fetch both sources simultaneously — no serial waiting
   const [kugouResult, lrclibResult] = await Promise.allSettled([
-    fetchKugouLyricsRaw(queryArtist, queryTitle),
+    fetchKugouLyricsRaw(queryArtist, kugouTitle),
     fetchLrclibRaw(queryTitle, queryArtist, duration),
   ]);
 
