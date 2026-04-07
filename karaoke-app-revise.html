@@ -1862,8 +1862,12 @@ async function onPlayerState(e) {
       // New video — exit stems mode so stale stems don't play over new song
       if (stemsActive) exitStemsMode();
 
-      // New video — pause immediately so audio and lyrics start together,
-      // then fetch lyrics, then seek to 0 and resume.
+      // Silence immediately so the user never hears the autoplay audio
+      // burst that occurs between loadVideoById() and this handler firing.
+      // We'll unmute right before the intentional playVideo() below.
+      player.mute();
+      player.setVolume(0);
+
       currentVideoId = vid;
       stopSync();
       lyrics       = [];
@@ -1876,8 +1880,7 @@ async function onPlayerState(e) {
       // from the previous track don't carry over.
       applyOffset(0);
 
-      // Hold the video while we fetch — grab duration before pausing
-      // because getDuration() is reliable while PLAYING.
+      // Grab duration while PLAYING (most reliable), then pause.
       const duration = player.getDuration();
       player.pauseVideo();
 
@@ -1886,6 +1889,12 @@ async function onPlayerState(e) {
       if (lyrics.length) {
         renderLyricsPanel();
         applyOverlayMode(document.getElementById('lyricsOverlay'));
+      }
+
+      // Restore audio (unless stems are active — they keep YT muted).
+      if (!stemsActive) {
+        player.unMute();
+        player.setVolume(100);
       }
 
       // Seek to beginning and resume; the resulting PLAYING event will
