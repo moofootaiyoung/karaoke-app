@@ -1889,16 +1889,14 @@ function stopSync() {
 }
 
 function tick() {
-  // When stem audio is active, sync lyrics to what the user is actually
-  // hearing (stemsAudio.currentTime) rather than YouTube's clock.
-  // This keeps the wipe locked to the stem even if it drifts slightly.
-  let rawTime;
-  if (stemsActive && stemsAudio && !stemsAudio.paused && stemsAudio.currentTime > 0) {
-    rawTime = stemsAudio.currentTime;
-  } else {
-    if (!player || !player.getCurrentTime) return;
-    rawTime = player.getCurrentTime();
-  }
+  // Always use player.getCurrentTime() for lyrics timing.
+  // Kugou/lrclib timestamps are calibrated to YouTube's audio timeline,
+  // so using stemsAudio.currentTime would introduce a time-base mismatch
+  // (yt-dlp audio may not start at exactly the same t=0 as YouTube).
+  // The stems drift-correction timer already keeps stemsAudio in sync
+  // with YouTube, so lyrics accuracy is unaffected.
+  if (!player || !player.getCurrentTime) return;
+  const rawTime = player.getCurrentTime();
   const t = rawTime + syncOffset;
   const idx = getActiveIndex(t);
 
