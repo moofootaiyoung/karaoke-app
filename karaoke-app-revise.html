@@ -1059,6 +1059,67 @@ body.stage-mode .lyrics-overlay.retro-mode .overlay-next,
 }
 .stems-cancel-btn:hover { border-color: #ff5555; color: #ff5555; }
 
+/* ── Sync quality toast ──────────────────────────────────────────── */
+.sync-toast {
+  position: absolute;
+  bottom: 44px;          /* above fullscreen button */
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: rgba(14,14,26,0.93);
+  border: 1px solid rgba(255,200,60,0.35);
+  border-radius: 10px;
+  padding: 9px 14px 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  color: #f0e8c8;
+  white-space: nowrap;
+  z-index: 30;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.25s, transform 0.25s;
+  max-width: calc(100% - 32px);
+  white-space: normal;
+  line-height: 1.45;
+}
+.sync-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.sync-toast .sync-toast-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.sync-toast .sync-toast-close {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.4);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 0 0 6px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.sync-toast .sync-toast-close:hover { color: rgba(255,255,255,0.8); }
+.sync-toast .sync-toast-adj {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 4px;
+}
+.sync-toast .sync-toast-adj button {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  color: #f0e8c8;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sync-toast .sync-toast-adj button:hover { background: rgba(255,255,255,0.2); }
+
 /* Stems toggle in controls panel */
 .stems-toggle-btn {
   width: 100%;
@@ -1162,6 +1223,17 @@ body.stage-mode .lyrics-overlay.retro-mode .overlay-next,
         <div id="stemsLoadingTitle">Vocal Reduction</div>
         <div id="stemsLoadingMsg">Contacting stems server…</div>
         <button class="stems-cancel-btn" id="stemsCancelBtn">Cancel</button>
+      </div>
+
+      <!-- Sync quality warning toast -->
+      <div class="sync-toast" id="syncToast" style="display:none">
+        <span class="sync-toast-icon" id="syncToastIcon">⚠️</span>
+        <span id="syncToastMsg"></span>
+        <span class="sync-toast-adj">
+          <button onclick="applyOffset(syncOffset-0.5);flashStatus('ok','Timing: '+(syncOffset>=0?'+':'')+syncOffset.toFixed(1)+'s',1000)">−</button>
+          <button onclick="applyOffset(syncOffset+0.5);flashStatus('ok','Timing: '+(syncOffset>=0?'+':'')+syncOffset.toFixed(1)+'s',1000)">+</button>
+        </span>
+        <button class="sync-toast-close" id="syncToastClose" title="Dismiss">✕</button>
       </div>
 
       <button class="fullscreen-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
@@ -1657,6 +1729,7 @@ async function fetchLyrics(title, duration) {
         `${lrclib.artist} — ${lrclib.track}`;
       document.getElementById('statusRow').style.display = 'flex';
       setStatus('ok', `Word-synced ✦ Fused (${wordLineCount}/${fused.length} lines)`);
+      showSyncToast(null);          // best quality — no warning
       return fused;
     }
   }
@@ -1669,6 +1742,7 @@ async function fetchLyrics(title, duration) {
       document.getElementById('statusRow').style.display = 'flex';
     }
     setStatus('ok', 'Word-synced ✦ Kugou');
+    showSyncToast('info', 'Word sync via Kugou — use − + to fine-tune if needed');
     return kugou;
   }
 
@@ -1677,7 +1751,13 @@ async function fetchLyrics(title, duration) {
     document.getElementById('songTitle').textContent =
       `${lrclib.artist} — ${lrclib.track}`;
     document.getElementById('statusRow').style.display = 'flex';
-    setStatus('ok', lrclib.synced ? 'Line-synced (lrclib)' : 'Plain lyrics (no sync)');
+    if (lrclib.synced) {
+      setStatus('ok', 'Line-synced (lrclib)');
+      showSyncToast('warn', 'Word timing estimated — sync may be off. Use − + to adjust.');
+    } else {
+      setStatus('ok', 'Plain lyrics (no sync)');
+      showSyncToast('warn', 'No timing data found for this song.');
+    }
     return lrclib.lines;
   }
 
@@ -1791,6 +1871,7 @@ async function onPlayerState(e) {
       document.getElementById('statusRow').style.display = 'none';
       clearOverlay();
       showPanel('loading');
+      hideSyncToast();              // clear any previous song's sync warning
       // Reset timing offset for each new song so stale adjustments
       // from the previous track don't carry over.
       applyOffset(0);
@@ -2437,6 +2518,41 @@ function flashStatus(type, msg, ms = 2200) {
   clearTimeout(statusTimer);
   statusTimer = setTimeout(() => setStatus('', 'Ready'), ms);
 }
+
+// ── Sync quality toast ─────────────────────────────────────────────
+// level: 'warn' | 'info' | null (null hides it)
+let syncToastTimer = null;
+function showSyncToast(level, msg) {
+  const toast = document.getElementById('syncToast');
+  const msgEl = document.getElementById('syncToastMsg');
+  const icon  = document.getElementById('syncToastIcon');
+  if (!toast || !msgEl) return;
+
+  clearTimeout(syncToastTimer);
+
+  if (!level) { hideSyncToast(); return; }
+
+  icon.textContent  = level === 'warn' ? '⚠️' : 'ℹ️';
+  msgEl.textContent = msg;
+  toast.style.display = 'flex';
+  // Force reflow before adding show class so transition fires
+  void toast.offsetWidth;
+  toast.classList.add('show');
+
+  // Auto-dismiss after 8 s for warnings, 5 s for info
+  syncToastTimer = setTimeout(hideSyncToast, level === 'warn' ? 8000 : 5000);
+}
+function hideSyncToast() {
+  const toast = document.getElementById('syncToast');
+  if (!toast) return;
+  toast.classList.remove('show');
+  setTimeout(() => { toast.style.display = 'none'; }, 280);
+}
+// Wire up the close button once DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('syncToastClose');
+  if (btn) btn.addEventListener('click', hideSyncToast);
+});
 
 // ══════════════════════════════════════════════════════════════════
 //  Helpers
