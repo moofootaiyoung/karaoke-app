@@ -1875,8 +1875,17 @@ function stopSync() {
 }
 
 function tick() {
-  if (!player || !player.getCurrentTime) return;
-  const t   = player.getCurrentTime() + syncOffset;
+  // When stem audio is active, sync lyrics to what the user is actually
+  // hearing (stemsAudio.currentTime) rather than YouTube's clock.
+  // This keeps the wipe locked to the stem even if it drifts slightly.
+  let rawTime;
+  if (stemsActive && stemsAudio && !stemsAudio.paused && stemsAudio.currentTime > 0) {
+    rawTime = stemsAudio.currentTime;
+  } else {
+    if (!player || !player.getCurrentTime) return;
+    rawTime = player.getCurrentTime();
+  }
+  const t = rawTime + syncOffset;
   const idx = getActiveIndex(t);
 
   if (idx !== currentIndex) {
@@ -2737,8 +2746,11 @@ async function activateStemAudio(url) {
     stemsAudio.currentTime = Math.max(0, player.getCurrentTime());
   }
 
-  // Mute YouTube
-  if (player && player.setVolume) player.setVolume(0);
+  // Mute YouTube — use both mute() and setVolume(0) to guarantee silence
+  if (player) {
+    if (player.mute)      player.mute();
+    if (player.setVolume) player.setVolume(0);
+  }
 
   stemsActive = true;
   setStemsUI('active', 'Active');
@@ -2774,7 +2786,10 @@ function exitStemsMode() {
     stemsAudio = null;
   }
 
-  if (player && player.setVolume) player.setVolume(100);
+  if (player) {
+    if (player.unMute)    player.unMute();
+    if (player.setVolume) player.setVolume(100);
+  }
 
   // Reset vocal mix slider
   const mixSlider = document.getElementById('vocalMixSlider');
@@ -2864,10 +2879,18 @@ document.getElementById('vocalMixSlider').addEventListener('input', function() {
 
   if (!stemsActive) return;
 
-  // YouTube volume: scale 0 → pct (letting vocals bleed back in)
-  if (player && player.setVolume) player.setVolume(pct);
+  // YouTube volume: unmute first, then set level so vocals bleed in
+  if (player) {
+    if (pct > 0) {
+      if (player.unMute)    player.unMute();
+      if (player.setVolume) player.setVolume(pct);
+    } else {
+      if (player.mute)      player.mute();
+      if (player.setVolume) player.setVolume(0);
+    }
+  }
 
-  // Stem volume: always full (the instrumental is always present)
+  // Stem volume: always full
   if (stemsAudio) stemsAudio.volume = 1.0;
 });
 
