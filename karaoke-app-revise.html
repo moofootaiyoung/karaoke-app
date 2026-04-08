@@ -1279,8 +1279,10 @@ body.stage-mode .lyrics-overlay.retro-mode .overlay-next,
         <span class="sync-toast-icon" id="syncToastIcon">⚠️</span>
         <span id="syncToastMsg"></span>
         <span class="sync-toast-adj">
-          <button onclick="applyOffset(syncOffset-0.5);flashStatus('ok','Timing: '+(syncOffset>=0?'+':'')+syncOffset.toFixed(1)+'s',1000)">−</button>
-          <button onclick="applyOffset(syncOffset+0.5);flashStatus('ok','Timing: '+(syncOffset>=0?'+':'')+syncOffset.toFixed(1)+'s',1000)">+</button>
+          <button title="−0.5s" onclick="applyOffset(syncOffset-0.5);flashStatus('ok','Timing: '+(syncOffset>=0?'+':'')+syncOffset.toFixed(1)+'s',1000)">−½</button>
+          <button title="−0.1s" onclick="applyOffset(syncOffset-0.1);flashStatus('ok','Timing: '+(syncOffset>=0?'+':'')+syncOffset.toFixed(1)+'s',1000)">−</button>
+          <button title="+0.1s" onclick="applyOffset(syncOffset+0.1);flashStatus('ok','Timing: '+(syncOffset>=0?'+':'')+syncOffset.toFixed(1)+'s',1000)">+</button>
+          <button title="+0.5s" onclick="applyOffset(syncOffset+0.5);flashStatus('ok','Timing: '+(syncOffset>=0?'+':'')+syncOffset.toFixed(1)+'s',1000)">+½</button>
         </span>
         <button class="sync-toast-close" id="syncToastClose" title="Dismiss">✕</button>
       </div>
@@ -1342,12 +1344,12 @@ body.stage-mode .lyrics-overlay.retro-mode .overlay-next,
       <div class="ctrl-group">
         <label>Timing Offset <span class="val" id="offsetVal">+0.0s</span></label>
         <div class="offset-row">
-          <button class="offset-btn" id="offsetMinus" title="−0.5s (←)">−</button>
+          <button class="offset-btn" id="offsetMinus" title="−0.1s (←)">−</button>
           <input type="range" id="offsetSlider" min="-5" max="5" step="0.1" value="0">
-          <button class="offset-btn" id="offsetPlus"  title="+0.5s (→)">+</button>
+          <button class="offset-btn" id="offsetPlus"  title="+0.1s (→)">+</button>
         </div>
         <div class="offset-footer">
-          <span class="offset-hint">← → keys to nudge · ↑ ↓ for ±1s</span>
+          <span class="offset-hint">← → ±0.1s · ↑ ↓ ±0.5s · saved per video</span>
           <button class="offset-reset" id="offsetReset">Reset</button>
         </div>
       </div>
@@ -1937,9 +1939,13 @@ async function onPlayerState(e) {
       clearOverlay();
       showPanel('loading');
       hideSyncToast();              // clear any previous song's sync warning
-      // Reset timing offset for each new song so stale adjustments
-      // from the previous track don't carry over.
-      applyOffset(0);
+      // Restore any saved offset for this video (manual corrections persist
+      // across reloads so songs that "keep" highlighting wrong stay fixed).
+      const savedOff = loadOffsetForVideo(vid);
+      applyOffset(savedOff, { skipSave: true });
+      if (savedOff !== 0) {
+        flashStatus('ok', `Restored timing: ${savedOff >= 0 ? '+' : ''}${savedOff.toFixed(1)}s`, 2000);
+      }
 
       // Grab duration while PLAYING (most reliable), then pause.
       const duration = player.getDuration();
@@ -2769,12 +2775,31 @@ function switchTab(name) {
 // ══════════════════════════════════════════════════════════════════
 //  Events: Controls
 // ══════════════════════════════════════════════════════════════════
-function applyOffset(val) {
+function applyOffset(val, opts) {
   syncOffset = Math.max(-5, Math.min(5, Math.round(val * 10) / 10));
   document.getElementById('offsetSlider').value = syncOffset;
   document.getElementById('offsetVal').textContent =
     (syncOffset >= 0 ? '+' : '') + syncOffset.toFixed(1) + 's';
   tick();
+  // Persist per-video unless this call is the auto-restore on load
+  if (!(opts && opts.skipSave)) saveOffsetForVideo();
+}
+
+// ── Per-video sync offset persistence ─────────────────────────────
+// Saves the user's manual timing correction so the same song doesn't
+// need to be re-tuned every load.  Keyed on YouTube video ID.
+function saveOffsetForVideo() {
+  if (!currentVideoId) return;
+  try {
+    if (syncOffset === 0) localStorage.removeItem('syncOffset_' + currentVideoId);
+    else localStorage.setItem('syncOffset_' + currentVideoId, String(syncOffset));
+  } catch (_) {}
+}
+function loadOffsetForVideo(videoId) {
+  try {
+    const v = localStorage.getItem('syncOffset_' + videoId);
+    return v != null ? parseFloat(v) || 0 : 0;
+  } catch (_) { return 0; }
 }
 
 document.getElementById('offsetSlider').addEventListener('input', function() {
@@ -2782,12 +2807,12 @@ document.getElementById('offsetSlider').addEventListener('input', function() {
 });
 
 document.getElementById('offsetMinus').addEventListener('click', () => {
-  applyOffset(syncOffset - 0.5);
+  applyOffset(syncOffset - 0.1);
   flashStatus('ok', `Timing: ${syncOffset >= 0 ? '+' : ''}${syncOffset.toFixed(1)}s`, 1000);
 });
 
 document.getElementById('offsetPlus').addEventListener('click', () => {
-  applyOffset(syncOffset + 0.5);
+  applyOffset(syncOffset + 0.1);
   flashStatus('ok', `Timing: ${syncOffset >= 0 ? '+' : ''}${syncOffset.toFixed(1)}s`, 1000);
 });
 
@@ -3120,9 +3145,12 @@ document.getElementById('stemsCancelBtn').addEventListener('click', () => {
 
 // ── Vocal Mix slider ──────────────────────────────────────────────
 // Blends original YouTube audio (vocals) back in alongside the stem.
-// pct = 0  → YT muted, stem at full (pure instrumental)
-// pct = 50 → YT at 50%, stem at 100% (some vocals)
-// pct = 100 → YT at 100%, stems off (original sound)
+// CRITICAL: YT audio contains BOTH vocals AND instrumental, so the stem
+// (which is instrumental-only) must fade DOWN as YT fades up — otherwise
+// you double the instrumental at every intermediate slider position.
+// pct = 0   → YT muted,    stem at 100%  → pure instrumental, no vocals
+// pct = 50  → YT at 50%,   stem at  50%  → 100% instrumental + 50% vocals
+// pct = 100 → YT at 100%,  stem muted    → original sound
 document.getElementById('vocalMixSlider').addEventListener('input', function() {
   const pct = parseInt(this.value);
   document.getElementById('vocalMixVal').textContent = pct + '%';
@@ -3140,8 +3168,9 @@ document.getElementById('vocalMixSlider').addEventListener('input', function() {
     }
   }
 
-  // Stem volume: always full
-  if (stemsAudio) stemsAudio.volume = 1.0;
+  // Stem volume: fade down inversely so YT's instrumental + stem's instrumental
+  // sum to ≈100% instead of doubling.
+  if (stemsAudio) stemsAudio.volume = Math.max(0, (100 - pct) / 100);
 });
 
 // ══════════════════════════════════════════════════════════════════
@@ -3161,10 +3190,12 @@ document.addEventListener('keydown', e => {
   }
 
   let delta = 0;
-  if (e.key === 'ArrowRight') delta =  0.3;
-  if (e.key === 'ArrowLeft')  delta = -0.3;
-  if (e.key === 'ArrowUp')    delta =  1.0;
-  if (e.key === 'ArrowDown')  delta = -1.0;
+  // Fine: ±0.1s · Coarse (Shift): ±0.5s
+  const fine = e.shiftKey ? 0.5 : 0.1;
+  if (e.key === 'ArrowRight') delta =  fine;
+  if (e.key === 'ArrowLeft')  delta = -fine;
+  if (e.key === 'ArrowUp')    delta =  0.5;
+  if (e.key === 'ArrowDown')  delta = -0.5;
   if (delta === 0) return;
   e.preventDefault();
   applyOffset(syncOffset + delta);
