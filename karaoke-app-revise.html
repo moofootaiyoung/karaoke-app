@@ -1424,8 +1424,16 @@ function sanitizeTitle(raw) {
 async function fetchKugouLyricsRaw(artist, track) {
   const q = [artist, track].filter(Boolean).join(' ');
   if (!q) return null;
-  const sres  = await fetch(`/api/kugou/search?q=${encodeURIComponent(q)}`);
-  const sdata = await sres.json();
+
+  let sdata = await fetch(`/api/kugou/search?q=${encodeURIComponent(q)}`).then(r => r.json());
+
+  // If the combined query returns nothing (e.g. censored chars broke it),
+  // retry with artist-only — Kugou will return the artist's most popular
+  // track and we still validate with the similarity check below.
+  if (!sdata.id && artist) {
+    sdata = await fetch(`/api/kugou/search?q=${encodeURIComponent(artist)}`).then(r => r.json());
+  }
+
   if (!sdata.id) return null;
 
   // JS-side title sanity check: if the returned song name shares no tokens
@@ -1678,7 +1686,11 @@ async function fetchLyrics(title, duration) {
   // songs by the featured artist instead of the main artist.
   // We strip it only for the *search query*, keeping the full title for
   // similarity checks so we still accept the right result.
-  const kugouTitle = queryTitle.replace(/\s*[\(\[](feat|ft|featuring)[.\s][^\)\]]*[\)\]]/gi, '').trim();
+  const kugouTitle = queryTitle
+    .replace(/\s*[\(\[](feat|ft|featuring)[.\s][^\)\]]*[\)\]]/gi, '')  // strip feat. annotations
+    .replace(/[^\w\s]/g, ' ')   // strip special chars (asterisks, punctuation) that break Kugou search
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 
   // Fetch both sources simultaneously — no serial waiting
   const [kugouResult, lrclibResult] = await Promise.allSettled([
