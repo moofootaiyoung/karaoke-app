@@ -897,9 +897,58 @@ input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; }
   gap: 10px;
   pointer-events: none;
 }
+.player-error-overlay.interactive { pointer-events: auto; }
 .player-error-icon { font-size: 36px; }
 .player-error-msg  { font-size: 14px; font-weight: 600; color: #ff7070; line-height: 1.4; }
 .player-error-hint { font-size: 12px; color: var(--muted); line-height: 1.5; max-width: 300px; }
+.player-error-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: none;
+  background: #ff0000cc;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.player-error-btn:hover { background: #ff0000; }
+.player-error-paste {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  width: 100%;
+  max-width: 320px;
+}
+.player-error-paste input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.player-error-paste input:focus { border-color: var(--accent); }
+.player-error-paste button {
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: none;
+  background: var(--accent);
+  color: #000;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.player-error-paste button:hover { filter: brightness(1.15); }
 
 /* ── File protocol warning banner ── */
 .protocol-warning {
@@ -1965,10 +2014,51 @@ function onPlayerError(e) {
     errDiv.className = 'player-error-overlay';
     wrapper.appendChild(errDiv);
   }
-  errDiv.innerHTML = `
-    <div class="player-error-icon">⚠️</div>
-    <div class="player-error-msg">${msg}</div>
-    <div class="player-error-hint">Try searching YouTube for the official audio version, which is usually embeddable.</div>`;
+
+  if (embedBlocked.includes(e.data)) {
+    // Build a YouTube search URL using the video's title when available
+    let searchQuery = '';
+    try {
+      const vdata = player.getVideoData();
+      if (vdata && vdata.title) searchQuery = vdata.title + ' official audio';
+    } catch (_) {}
+    const ytSearchUrl = searchQuery
+      ? 'https://www.youtube.com/results?search_query=' + encodeURIComponent(searchQuery)
+      : 'https://www.youtube.com/results?search_query=official+audio';
+
+    errDiv.className = 'player-error-overlay interactive';
+    errDiv.innerHTML = `
+      <div class="player-error-icon">🚫</div>
+      <div class="player-error-msg">Embedding disabled for this video</div>
+      <div class="player-error-hint">Find an alternate upload or the official audio, then paste its URL below.</div>
+      <a class="player-error-btn" href="${ytSearchUrl}" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.8 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+        Search YouTube
+      </a>
+      <div class="player-error-paste">
+        <input type="text" id="errPasteInput" placeholder="Paste YouTube URL or ID…" autocomplete="off" spellcheck="false" />
+        <button id="errPasteGo">Go</button>
+      </div>`;
+
+    // Wire up paste-and-go
+    const pasteInput = errDiv.querySelector('#errPasteInput');
+    const pasteBtn   = errDiv.querySelector('#errPasteGo');
+    const go = () => {
+      const val = pasteInput.value.trim();
+      if (!val) return;
+      handleLoad(val);
+    };
+    pasteBtn.addEventListener('click', go);
+    pasteInput.addEventListener('keydown', ev => { if (ev.key === 'Enter') go(); });
+    // Auto-focus so user can paste immediately
+    setTimeout(() => pasteInput.focus(), 50);
+  } else {
+    errDiv.className = 'player-error-overlay';
+    errDiv.innerHTML = `
+      <div class="player-error-icon">⚠️</div>
+      <div class="player-error-msg">${msg}</div>
+      <div class="player-error-hint">Try searching YouTube for the official audio version, which is usually embeddable.</div>`;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
