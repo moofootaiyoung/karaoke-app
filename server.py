@@ -7,6 +7,8 @@ Endpoints
 ─────────
 GET /api/kugou/search?q=TRACK+ARTIST   → {id, accesskey, song, singer} or {}
 GET /api/kugou/lyrics?id=ID&ak=KEY     → {krc: "<decoded KRC text>"} or {}
+GET /api/ytsearch?q=QUERY&skip=ID      → [{id, title}, …] up to 8 results
+                                          (skip = video ID to exclude, e.g. the blocked one)
 
 KRC format (word-level):
   [line_start_ms,line_dur_ms]<word_off_ms,word_dur_ms,0>word <…>word …
@@ -21,6 +23,7 @@ import json
 import os
 import re
 import ssl
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -131,6 +134,41 @@ def kugou_lyrics(lyric_id, accesskey):
     return zlib.decompress(bytes(decrypted)).decode("utf-8", errors="replace")
 
 
+def youtube_search(query: str, skip_id: str = "", n: int = 8) -> list:
+    """
+    Use yt-dlp to search YouTube and return up to n results as
+    [{id, title}, ...].  Excludes skip_id (the blocked video) so the
+    app never retries the same URL.  Fast — no download, metadata only.
+    """
+    search_spec = f"ytsearch{n}:{query}"
+    try:
+        proc = subprocess.run(
+            [
+                "yt-dlp",
+                "--print", "%(id)s\t%(title)s",
+                "--no-download",
+                "--no-playlist",
+                "--no-check-certificate",
+                "--quiet",
+                search_spec,
+            ],
+            capture_output=True, text=True, timeout=20,
+        )
+        results = []
+        for line in proc.stdout.splitlines():
+            parts = line.split("\t", 1)
+            if len(parts) != 2:
+                continue
+            vid_id, title = parts[0].strip(), parts[1].strip()
+            if not vid_id or vid_id == skip_id:
+                continue
+            results.append({"id": vid_id, "title": title})
+        return results
+    except Exception as exc:
+        print(f"[ytsearch] ERROR: {exc}")
+        return []
+
+
 class KaraokeHandler(http.server.SimpleHTTPRequestHandler):
     """Static file server + Kugou lyrics proxy."""
 
@@ -140,6 +178,8 @@ class KaraokeHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_search(parsed.query)
         elif parsed.path == "/api/kugou/lyrics":
             self._handle_lyrics(parsed.query)
+        elif parsed.path == "/api/ytsearch":
+            self._handle_ytsearch(parsed.query)
         else:
             super().do_GET()
 
@@ -155,6 +195,17 @@ class KaraokeHandler(http.server.SimpleHTTPRequestHandler):
             self._json(result or {})
         except Exception as e:
             self._json({"error": str(e)})
+
+    # ── /api/ytsearch ────────────────────────────────────────────────
+
+    def _handle_ytsearch(self, qs):
+        params  = urllib.parse.parse_qs(qs)
+        query   = " ".join(params.get("q",    [""])).strip()
+        skip_id = " ".join(params.get("skip", [""])).strip()
+        if not query:
+            return self._json([])
+        results = youtube_search(query, skip_id=skip_id)
+        self._json(results)
 
     # ── /api/kugou/lyrics ────────────────────────────────────────────
 
@@ -192,7 +243,8 @@ class KaraokeHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     os.chdir(os.path.dirname(os.path.abspath(__file__)) or ".")
     print(f"🎤  KaraokeMode  http://localhost:{PORT}/karaoke-app-revise.html")
-    print(f"    Kugou proxy → /api/kugou/{{search,lyrics}}")
+    print(f"    Kugou proxy  → /api/kugou/{{search,lyrics}}")
+    print(f"    YT search    → /api/ytsearch?q=QUERY&skip=ID")
     print()
     with http.server.HTTPServer(("", PORT), KaraokeHandler) as httpd:
         try:

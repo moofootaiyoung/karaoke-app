@@ -1971,6 +1971,12 @@ async function onPlayerState(e) {
       return;   // don't call startSync() here — wait for the PLAYING re-fire
     }
 
+    // If autoFindAlternative is trying a candidate and it started playing, signal success
+    if (window._autoFindResolve) {
+      window._autoFindResolve(true);
+      // Don't return — let normal startup (lyrics fetch etc.) proceed below
+    }
+
     startSync();
     // Stems: resume both audio elements when YouTube resumes
     if (stemsActive && stemsAudio) {
@@ -2001,6 +2007,17 @@ async function onPlayerState(e) {
 //  YouTube's raw "Error 153" UI.
 // ══════════════════════════════════════════════════════════════════
 function onPlayerError(e) {
+  // If autoFindAlternative is mid-search, feed the error result back and stop here
+  if (window._autoFindResolve) {
+    const embedBlocked = [101, 150, 151, 153];
+    if (embedBlocked.includes(e.data)) {
+      window._autoFindResolve(false);  // this candidate also blocked → try next
+      return;
+    }
+    window._autoFindResolve(false);    // any error = no good
+    return;
+  }
+
   const embedBlocked = [101, 150, 151, 153];
   let msg;
   if (embedBlocked.includes(e.data)) {
@@ -2028,48 +2045,134 @@ function onPlayerError(e) {
   }
 
   if (embedBlocked.includes(e.data)) {
-    // Build a YouTube search URL using the video's title when available
-    let searchQuery = '';
+    // Extract title of the blocked video to drive the auto-search
+    let blockedTitle = '';
+    const blockedId  = currentVideoId || '';
     try {
       const vdata = player.getVideoData();
-      if (vdata && vdata.title) searchQuery = vdata.title + ' official audio';
+      if (vdata && vdata.title) blockedTitle = vdata.title;
     } catch (_) {}
+
+    const searchQuery = blockedTitle ? blockedTitle + ' official audio' : '';
     const ytSearchUrl = searchQuery
       ? 'https://www.youtube.com/results?search_query=' + encodeURIComponent(searchQuery)
       : 'https://www.youtube.com/results?search_query=official+audio';
 
+    // ── Show "Searching…" state immediately ──────────────────────
     errDiv.className = 'player-error-overlay interactive';
     errDiv.innerHTML = `
-      <div class="player-error-icon">🚫</div>
-      <div class="player-error-msg">Embedding disabled for this video</div>
-      <div class="player-error-hint">Find an alternate upload or the official audio, then paste its URL below.</div>
-      <a class="player-error-btn" href="${ytSearchUrl}" target="_blank" rel="noopener">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.8 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        Search YouTube
-      </a>
-      <div class="player-error-paste">
-        <input type="text" id="errPasteInput" placeholder="Paste YouTube URL or ID…" autocomplete="off" spellcheck="false" />
+      <div class="player-error-icon">🔍</div>
+      <div class="player-error-msg" id="errAutoMsg">Searching for an alternate upload…</div>
+      <div class="player-error-hint" id="errAutoHint">${escHtml(blockedTitle || 'Looking for an embeddable version')}</div>
+      <div class="player-error-paste" style="margin-top:10px">
+        <input type="text" id="errPasteInput" placeholder="Or paste a YouTube URL / ID…" autocomplete="off" spellcheck="false" />
         <button id="errPasteGo">Go</button>
       </div>`;
 
-    // Wire up paste-and-go
+    // Wire up manual paste-and-go as a fallback
     const pasteInput = errDiv.querySelector('#errPasteInput');
     const pasteBtn   = errDiv.querySelector('#errPasteGo');
-    const go = () => {
-      const val = pasteInput.value.trim();
-      if (!val) return;
-      handleLoad(val);
-    };
+    const go = () => { const v = pasteInput.value.trim(); if (v) handleLoad(v); };
     pasteBtn.addEventListener('click', go);
     pasteInput.addEventListener('keydown', ev => { if (ev.key === 'Enter') go(); });
-    // Auto-focus so user can paste immediately
-    setTimeout(() => pasteInput.focus(), 50);
+
+    // ── Auto-search via local server ─────────────────────────────
+    // Tries each result in order until one loads without an error.
+    if (searchQuery) {
+      autoFindAlternative(blockedId, searchQuery, errDiv);
+    } else {
+      // No title available — fall straight to manual UI
+      const msgEl = document.getElementById('errAutoMsg');
+      if (msgEl) msgEl.textContent = 'Embedding disabled — paste an alternate URL below';
+      const hintEl = document.getElementById('errAutoHint');
+      if (hintEl) hintEl.innerHTML =
+        `<a class="player-error-btn" href="${ytSearchUrl}" target="_blank" rel="noopener" style="font-size:12px;padding:5px 12px">Search YouTube ↗</a>`;
+      setTimeout(() => pasteInput.focus(), 50);
+    }
   } else {
     errDiv.className = 'player-error-overlay';
     errDiv.innerHTML = `
       <div class="player-error-icon">⚠️</div>
       <div class="player-error-msg">${msg}</div>
       <div class="player-error-hint">Try searching YouTube for the official audio version, which is usually embeddable.</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Auto-find alternative when embedding is blocked
+//
+//  Calls /api/ytsearch (yt-dlp under the hood) with the blocked
+//  video's title, then tries each result one at a time.  If a result
+//  loads cleanly (no error event within 4 s) it stays.  If it also
+//  fails embedding, the next candidate is tried automatically.
+//
+//  onPlayerError / onPlayerState check window._autoFindResolve and
+//  call it when they receive the next event, feeding the result back
+//  into the async loop below.
+// ══════════════════════════════════════════════════════════════════
+window._autoFindResolve = null;   // set by autoFindAlternative; cleared by callbacks
+
+async function autoFindAlternative(blockedId, query, errDiv) {
+  const msgEl  = document.getElementById('errAutoMsg');
+  const hintEl = document.getElementById('errAutoHint');
+
+  const setOverlayMsg = (icon, msg, hint) => {
+    const iconEl = errDiv && errDiv.querySelector('.player-error-icon');
+    if (iconEl)  iconEl.textContent  = icon;
+    if (msgEl)   msgEl.textContent   = msg;
+    if (hintEl)  hintEl.textContent  = hint || '';
+  };
+
+  try {
+    const url = `/api/ytsearch?q=${encodeURIComponent(query)}&skip=${encodeURIComponent(blockedId)}`;
+    const res  = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const candidates = await res.json();
+
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      setOverlayMsg('🚫', 'No alternate uploads found', 'Paste a URL below to try one manually');
+      setTimeout(() => document.getElementById('errPasteInput')?.focus(), 50);
+      return;
+    }
+
+    // Try each candidate until one plays without an embed error
+    for (const { id, title } of candidates) {
+      setOverlayMsg('⏳', `Trying: ${title}`, 'Looking for an embeddable upload…');
+
+      // Load this candidate — onPlayerState / onPlayerError will resolve the promise
+      player.loadVideoById(id);
+
+      const ok = await new Promise(resolve => {
+        let done = false;
+        const finish = (result) => {
+          if (done) return;
+          done = true;
+          window._autoFindResolve = null;
+          clearTimeout(timer);
+          resolve(result);
+        };
+        // Give each candidate 5 s to either play or error
+        const timer = setTimeout(() => finish(true), 5000);
+        window._autoFindResolve = finish;
+      });
+
+      if (ok) {
+        // Video loaded cleanly — remove overlay and show iframe
+        if (errDiv && errDiv.parentNode) errDiv.remove();
+        const ytFrame = document.getElementById('ytPlayer');
+        if (ytFrame) ytFrame.style.visibility = 'visible';
+        return;
+      }
+      // This candidate also blocked — loop to the next one
+    }
+
+    // Exhausted all candidates
+    setOverlayMsg('🚫', 'No embeddable upload found automatically',
+      'Try pasting a URL from YouTube below');
+    setTimeout(() => document.getElementById('errPasteInput')?.focus(), 50);
+
+  } catch (_) {
+    setOverlayMsg('🚫', 'Embedding disabled — paste an alternate URL below', '');
+    setTimeout(() => document.getElementById('errPasteInput')?.focus(), 50);
   }
 }
 
