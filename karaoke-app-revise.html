@@ -1972,19 +1972,25 @@ async function onPlayerState(e) {
     }
 
     startSync();
-    // Stems: resume stem audio when YouTube resumes
+    // Stems: resume both audio elements when YouTube resumes
     if (stemsActive && stemsAudio) {
       stemsAudio.currentTime = player.getCurrentTime();
       stemsAudio.play().catch(() => {});
     }
+    if (stemsActive && vocalsAudio) {
+      vocalsAudio.currentTime = player.getCurrentTime();
+      vocalsAudio.play().catch(() => {});
+    }
 
   } else if (e.data === YT.PlayerState.ENDED) {
     stopSync();
-    if (stemsActive && stemsAudio) stemsAudio.pause();
+    if (stemsActive && stemsAudio)  stemsAudio.pause();
+    if (stemsActive && vocalsAudio) vocalsAudio.pause();
     playNextInQueue();
   } else if (e.data === YT.PlayerState.PAUSED) {
     stopSync();
-    if (stemsActive && stemsAudio) stemsAudio.pause();
+    if (stemsActive && stemsAudio)  stemsAudio.pause();
+    if (stemsActive && vocalsAudio) vocalsAudio.pause();
   }
 }
 
@@ -2942,7 +2948,8 @@ document.getElementById('panelToggleBtn').addEventListener('click', () => {
 // ══════════════════════════════════════════════════════════════════
 const STEMS_SERVER  = 'http://localhost:8082';
 let stemsActive     = false;   // vocal reduction is currently on
-let stemsAudio      = null;    // HTMLAudioElement for the stem
+let stemsAudio      = null;    // HTMLAudioElement — instrumental stem (no_vocals.mp3)
+let vocalsAudio     = null;    // HTMLAudioElement — vocals stem (vocals.mp3), vol=0 by default
 let stemsPollTimer  = null;    // setInterval for status polling
 let stemsDriftTimer = null;    // setInterval for drift correction
 
@@ -2970,7 +2977,7 @@ async function initStemsMode() {
     const data = await res.json();
 
     if (data.url && data.status === 'done') {
-      await activateStemAudio(data.url);
+      await activateStemAudio(data.url, data.vocals_url || null);
     } else if (data.status === 'error') {
       setStemsUI('error', data.message || 'Processing failed');
     } else {
@@ -2993,7 +3000,7 @@ function pollStemsStatus(videoId) {
 
       if (data.url && data.status === 'done') {
         clearInterval(stemsPollTimer); stemsPollTimer = null;
-        await activateStemAudio(data.url);
+        await activateStemAudio(data.url, data.vocals_url || null);
       } else if (data.status === 'error') {
         clearInterval(stemsPollTimer); stemsPollTimer = null;
         setStemsUI('error', data.message || 'Processing failed');
@@ -3008,46 +3015,67 @@ function pollStemsStatus(videoId) {
   }, 3000);
 }
 
-// ── Activate: create <audio>, mute YT, sync playback ─────────────
-async function activateStemAudio(url) {
-  if (stemsAudio) { stemsAudio.pause(); stemsAudio.src = ''; }
+// ── Activate: create <audio> elements, mute YT, sync playback ─────
+// instrUrl  — URL for no_vocals.mp3 (instrumental, always at vol=1)
+// vocalsUrl — URL for vocals.mp3    (vocals-only, vol=0 by default;
+//             user raises it with the Vocal Mix slider).
+// By keeping these two stems separate we NEVER re-introduce the full
+// YouTube mix, so the instrumental is never doubled.
+async function activateStemAudio(instrUrl, vocalsUrl) {
+  // Clean up any previous stems
+  if (stemsAudio)  { stemsAudio.pause();  stemsAudio.src  = ''; }
+  if (vocalsAudio) { vocalsAudio.pause(); vocalsAudio.src = ''; vocalsAudio = null; }
 
-  stemsAudio = new Audio(url);
+  const startTime = player && player.getCurrentTime
+    ? Math.max(0, player.getCurrentTime()) : 0;
+
+  // ── Instrumental stem ──────────────────────────────────────────
+  stemsAudio = new Audio(instrUrl);
   stemsAudio.crossOrigin = 'anonymous';
-  stemsAudio.preload = 'auto';
+  stemsAudio.preload     = 'auto';
+  stemsAudio.volume      = 1.0;
+  stemsAudio.currentTime = startTime;
 
-  // Seek to current YouTube position before playing
-  if (player && player.getCurrentTime) {
-    stemsAudio.currentTime = Math.max(0, player.getCurrentTime());
+  // ── Vocals stem (optional — older cached videos may not have it) ─
+  if (vocalsUrl) {
+    vocalsAudio = new Audio(vocalsUrl);
+    vocalsAudio.crossOrigin = 'anonymous';
+    vocalsAudio.preload     = 'auto';
+    vocalsAudio.volume      = 0;   // silent until slider is moved
+    vocalsAudio.currentTime = startTime;
   }
 
-  // Mute YouTube — use both mute() and setVolume(0) to guarantee silence
+  // Mute YouTube entirely — stems handle all audio from here on
   if (player) {
     if (player.mute)      player.mute();
     if (player.setVolume) player.setVolume(0);
   }
 
   stemsActive = true;
-  setStemsUI('active', 'Active');
+  setStemsUI('active', vocalsUrl
+    ? 'Active — drag slider to blend vocals'
+    : 'Active (vocals stem unavailable for this video)');
 
   // Start playing if YouTube is already playing
   if (player && player.getPlayerState &&
       player.getPlayerState() === YT.PlayerState.PLAYING) {
     try { await stemsAudio.play(); } catch(e) { /* autoplay blocked */ }
+    if (vocalsAudio) {
+      try { await vocalsAudio.play(); } catch(e) {}
+    }
   }
 
-  // Drift correction every 2 s — gapless for mild drift, seek for large drift
+  // Drift correction every 2 s — keeps both stems locked to YouTube time
   clearInterval(stemsDriftTimer);
   stemsDriftTimer = setInterval(() => {
-    if (!stemsAudio || !player || !player.getCurrentTime) return;
-    const ytTime   = player.getCurrentTime();
-    const stemTime = stemsAudio.currentTime;
-    const diff     = Math.abs(stemTime - ytTime);
-    if (diff > 0.5) stemsAudio.currentTime = ytTime;
+    if (!player || !player.getCurrentTime) return;
+    const ytTime = player.getCurrentTime();
+    if (stemsAudio  && Math.abs(stemsAudio.currentTime  - ytTime) > 0.5) stemsAudio.currentTime  = ytTime;
+    if (vocalsAudio && Math.abs(vocalsAudio.currentTime - ytTime) > 0.5) vocalsAudio.currentTime = ytTime;
   }, 2000);
 }
 
-// ── Deactivate: restore YT volume, kill stem audio ────────────────
+// ── Deactivate: restore YT volume, kill both stem audio elements ──
 function exitStemsMode() {
   stemsActive = false;
   clearInterval(stemsPollTimer);
@@ -3059,6 +3087,12 @@ function exitStemsMode() {
     stemsAudio.pause();
     stemsAudio.src = '';
     stemsAudio = null;
+  }
+
+  if (vocalsAudio) {
+    vocalsAudio.pause();
+    vocalsAudio.src = '';
+    vocalsAudio = null;
   }
 
   if (player) {
@@ -3118,9 +3152,10 @@ function setStemsUI(state, msg) {
       btn.textContent  = 'Disable Vocal Reduction';
       btn.className    = 'stems-toggle-btn stems-on';
       statusEl.style.display = 'block';
-      statusEl.textContent   = 'Vocal Mix: drag slider to add vocals back';
+      statusEl.textContent   = msg || 'Active';
       if (overlay) overlay.style.display = 'none';
-      if (mixGroup) mixGroup.style.display = 'block';
+      // Only show the vocal mix slider if the vocals stem loaded
+      if (mixGroup) mixGroup.style.display = vocalsAudio ? 'block' : 'none';
       break;
 
     case 'error':
@@ -3144,33 +3179,33 @@ document.getElementById('stemsCancelBtn').addEventListener('click', () => {
 });
 
 // ── Vocal Mix slider ──────────────────────────────────────────────
-// Blends original YouTube audio (vocals) back in alongside the stem.
-// CRITICAL: YT audio contains BOTH vocals AND instrumental, so the stem
-// (which is instrumental-only) must fade DOWN as YT fades up — otherwise
-// you double the instrumental at every intermediate slider position.
-// pct = 0   → YT muted,    stem at 100%  → pure instrumental, no vocals
-// pct = 50  → YT at 50%,   stem at  50%  → 100% instrumental + 50% vocals
-// pct = 100 → YT at 100%,  stem muted    → original sound
+// Controls the volume of the VOCALS STEM (vocals.mp3) independently
+// from the INSTRUMENTAL STEM (no_vocals.mp3).
+//
+// YouTube stays MUTED throughout — we never re-introduce the full mix.
+// This eliminates instrumental doubling entirely: adding vocals means
+// raising vocalsAudio.volume, not bleeding YT audio back in.
+//
+// pct = 0   → vocalsAudio silent,  stemsAudio at 1.0 → pure instrumental
+// pct = 50  → vocalsAudio at 0.5,  stemsAudio at 1.0 → half-vocals blend
+// pct = 100 → vocalsAudio at 1.0,  stemsAudio at 1.0 → full vocals (= original)
+//
+// If vocals stem is unavailable (old cache), the slider is hidden.
 document.getElementById('vocalMixSlider').addEventListener('input', function() {
   const pct = parseInt(this.value);
   document.getElementById('vocalMixVal').textContent = pct + '%';
 
   if (!stemsActive) return;
 
-  // YouTube volume: unmute first, then set level so vocals bleed in
-  if (player) {
-    if (pct > 0) {
-      if (player.unMute)    player.unMute();
-      if (player.setVolume) player.setVolume(pct);
-    } else {
-      if (player.mute)      player.mute();
-      if (player.setVolume) player.setVolume(0);
-    }
+  // Instrumental stays full — never touch it
+  if (stemsAudio) stemsAudio.volume = 1.0;
+
+  // Vocals stem: raise/lower independently
+  if (vocalsAudio) {
+    vocalsAudio.volume = pct / 100;
   }
 
-  // Stem volume: fade down inversely so YT's instrumental + stem's instrumental
-  // sum to ≈100% instead of doubling.
-  if (stemsAudio) stemsAudio.volume = Math.max(0, (100 - pct) / 100);
+  // YouTube stays muted — no blending of the full mix
 });
 
 // ══════════════════════════════════════════════════════════════════

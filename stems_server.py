@@ -3,7 +3,12 @@
 KaraokeMode — Option B Stems Server
 ====================================
 Downloads YouTube audio via yt-dlp, separates vocals with Demucs,
-caches the instrumental stem, and serves it to the karaoke app.
+caches BOTH the instrumental (no_vocals.mp3) AND vocals (vocals.mp3)
+stems, and serves them to the karaoke app.
+
+The app plays no_vocals.mp3 as the base and blends in vocals.mp3 via
+a separate <audio> element when the user drags the Vocal Mix slider —
+so the instrumental is NEVER doubled.
 
 Install dependencies:
     pip install demucs yt-dlp
@@ -40,6 +45,9 @@ def _status_file(video_id: str) -> Path:
 def _stem_file(video_id: str) -> Path:
     return CACHE_DIR / video_id / "no_vocals.mp3"
 
+def _vocals_file(video_id: str) -> Path:
+    return CACHE_DIR / video_id / "vocals.mp3"
+
 def _read_status(video_id: str) -> dict:
     sf = _status_file(video_id)
     if sf.exists():
@@ -52,6 +60,16 @@ def _read_status(video_id: str) -> dict:
 def _write_status(video_id: str, data: dict):
     _status_file(video_id).write_text(json.dumps(data))
 
+def _done_response(video_id: str) -> dict:
+    """Build the JSON response for a fully-processed video."""
+    resp = {
+        "status": "done",
+        "url":    f"http://localhost:{PORT}/stems/file/{video_id}",
+    }
+    if _vocals_file(video_id).exists():
+        resp["vocals_url"] = f"http://localhost:{PORT}/stems/vocals/{video_id}"
+    return resp
+
 def _fmt(seconds: float) -> str:
     m, s = divmod(int(seconds), 60)
     return f"{m}:{s:02d}"
@@ -60,10 +78,11 @@ def _fmt(seconds: float) -> str:
 # ── Core processing pipeline ───────────────────────────────────────
 
 def _process(video_id: str):
-    job_dir = CACHE_DIR / video_id
+    job_dir    = CACHE_DIR / video_id
     job_dir.mkdir(exist_ok=True)
-    wav_path  = job_dir / "audio.wav"
-    stem_path = _stem_file(video_id)
+    wav_path   = job_dir / "audio.wav"
+    stem_path  = _stem_file(video_id)
+    vox_path   = _vocals_file(video_id)
 
     try:
         # ── Step 1: Download audio ─────────────────────────────────
@@ -102,7 +121,7 @@ def _process(video_id: str):
         dm = subprocess.run(
             [
                 sys.executable, "-m", "demucs",
-                "--two-stems=vocals",       # only split into vocals + no_vocals
+                "--two-stems=vocals",       # produces vocals.mp3 + no_vocals.mp3
                 "--mp3",                     # output as MP3 to save space
                 "--mp3-bitrate", "192",
                 "-o", str(job_dir),
@@ -113,14 +132,28 @@ def _process(video_id: str):
         if dm.returncode != 0:
             raise RuntimeError(f"Demucs failed: {dm.stderr.decode()[:400]}")
 
-        # ── Step 3: Locate the instrumental stem ──────────────────
+        # ── Step 3: Locate and save BOTH stems ────────────────────
         # Demucs outputs to: job_dir/htdemucs/audio/no_vocals.mp3
-        found = list(job_dir.glob("*/audio*/no_vocals.mp3"))
-        if not found:
-            found = list(job_dir.glob("**/no_vocals.mp3"))
-        if not found:
+        #                    job_dir/htdemucs/audio/vocals.mp3
+
+        found_instr = list(job_dir.glob("*/audio*/no_vocals.mp3"))
+        if not found_instr:
+            found_instr = list(job_dir.glob("**/no_vocals.mp3"))
+        if not found_instr:
             raise RuntimeError("Demucs output file not found")
-        found[0].rename(stem_path)
+        found_instr[0].rename(stem_path)
+        print(f"[{video_id}] Instrumental stem saved → {stem_path}")
+
+        # Save vocals stem alongside — this is what makes mixing work
+        # without re-introducing the full mix (which doubles the instrumental).
+        found_vox = list(job_dir.glob("*/audio*/vocals.mp3"))
+        if not found_vox:
+            found_vox = list(job_dir.glob("**/vocals.mp3"))
+        if found_vox:
+            found_vox[0].rename(vox_path)
+            print(f"[{video_id}] Vocals stem saved → {vox_path}")
+        else:
+            print(f"[{video_id}] Warning: vocals.mp3 not found (vocal mix slider will be disabled)")
 
         # Clean up raw audio and Demucs temp tree to save disk
         wav_path.unlink(missing_ok=True)
@@ -130,7 +163,7 @@ def _process(video_id: str):
             import shutil; shutil.rmtree(tmp, ignore_errors=True)
 
         _write_status(video_id, {"status": "done"})
-        print(f"[{video_id}] Done — stem saved to {stem_path}")
+        print(f"[{video_id}] Done")
 
     except Exception as exc:
         msg = str(exc)
@@ -180,10 +213,7 @@ class Handler(BaseHTTPRequestHandler):
 
             # Already cached?
             if stem.exists():
-                return self._json(200, {
-                    "status": "done",
-                    "url":    f"http://localhost:{PORT}/stems/file/{video_id}",
-                })
+                return self._json(200, _done_response(video_id))
 
             # Check persisted status (e.g. error from previous run)
             saved = _read_status(video_id)
@@ -201,36 +231,38 @@ class Handler(BaseHTTPRequestHandler):
                 "progress": saved.get("progress", "Starting…"),
             })
 
-        # ── GET /stems/file/VIDEO_ID — serve the stem MP3 ─────────
+        # ── GET /stems/file/VIDEO_ID — serve instrumental stem MP3 ─
         if path.startswith("/stems/file/"):
             video_id = path.split("/stems/file/")[-1].split("/")[0]
-            stem     = _stem_file(video_id)
-            if not stem.exists():
-                return self._json(404, {"error": "Stem not ready"})
+            return self._serve_audio(_stem_file(video_id))
 
-            data = stem.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type",   "audio/mpeg")
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Accept-Ranges",  "bytes")
-            self._cors()
-            self.end_headers()
-            self.wfile.write(data)
-            return
+        # ── GET /stems/vocals/VIDEO_ID — serve vocals stem MP3 ─────
+        if path.startswith("/stems/vocals/"):
+            video_id = path.split("/stems/vocals/")[-1].split("/")[0]
+            return self._serve_audio(_vocals_file(video_id))
 
         # ── GET /stems/status?id=VIDEO_ID ─────────────────────────
         if path == "/stems/status":
             video_id = "".join(qs.get("id", [""])).strip()
             stem     = _stem_file(video_id)
             if stem.exists():
-                return self._json(200, {
-                    "status": "done",
-                    "url": f"http://localhost:{PORT}/stems/file/{video_id}",
-                })
+                return self._json(200, _done_response(video_id))
             saved = _read_status(video_id)
             return self._json(200, saved or {"status": "unknown"})
 
         self._json(404, {"error": "Not found"})
+
+    def _serve_audio(self, file_path: Path):
+        if not file_path.exists():
+            return self._json(404, {"error": "Stem not ready"})
+        data = file_path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type",   "audio/mpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Accept-Ranges",  "bytes")
+        self._cors()
+        self.end_headers()
+        self.wfile.write(data)
 
     def _json(self, code: int, data: dict):
         body = json.dumps(data).encode()
