@@ -8,6 +8,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
+/* Register --fill-pct as an animatable percentage property so CSS
+   transitions work on it (required for mask-image gradient animation). */
+@property --fill-pct {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
 :root {
   --bg: #080810;
   --surface: #0f0f1c;
@@ -466,11 +474,12 @@ body.stage-mode .lyrics-overlay.centered-mode::before {
 .overlay-word-fill {
   position: absolute;
   top: 0; left: 0;
-  overflow: hidden;
-  width: 0%;
+  /* Always full-width — clipped by mask-image instead of overflow:hidden+width.
+     This lets the leading edge use a soft gradient (ink-brush effect) instead
+     of a hard pixel cut. */
+  width: 100%;
   white-space: nowrap;
   color: var(--lyric-color);
-  /* Brighter bloom + hard shadow so the lit text pops against the dim base */
   text-shadow:
     0 0 40px rgba(255,255,255,0.65),
     0 0 12px rgba(255,255,255,0.30),
@@ -479,25 +488,42 @@ body.stage-mode .lyrics-overlay.centered-mode::before {
   font-size: var(--lyric-size);
   letter-spacing: 1.5px;
   display: block;
-  transition: width 40ms linear;
+
+  /* Ink-brush soft wipe: solid fill up to --fill-pct, then a ~14px feather,
+     then transparent.  The @property declaration above allows CSS to
+     interpolate --fill-pct smoothly between JS updates. */
+  --fill-pct: 0%;
+  -webkit-mask-image: linear-gradient(to right,
+    black                           var(--fill-pct),
+    rgba(0,0,0,0.55)  calc(var(--fill-pct) + 6px),
+    transparent       calc(var(--fill-pct) + 14px)
+  );
+  mask-image: linear-gradient(to right,
+    black                           var(--fill-pct),
+    rgba(0,0,0,0.55)  calc(var(--fill-pct) + 6px),
+    transparent       calc(var(--fill-pct) + 14px)
+  );
+  transition: --fill-pct 55ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-/* Scan-line glow: a thin bright bar that rides the fill frontier.
-   Driven by --fill-x CSS variable set each tick in updateKaraokeWipe.
-   Shown only while a word is mid-wipe (.wiping class). */
+/* Scan-line glow — rides the fill frontier. */
 .overlay-word-wrap::after {
   content: '';
   position: absolute;
-  top: 8%; bottom: 8%;
-  width: 3px;
+  top: 5%; bottom: 5%;
+  width: 2px;
   border-radius: 2px;
-  left: var(--fill-x, 0%);
-  transform: translateX(-50%);
-  background: rgba(255,255,255,0.92);
-  box-shadow: 0 0 10px 6px rgba(255,255,255,0.40);
+  left: var(--fill-pct, 0%);
+  transform: translateX(-1px);
+  background: linear-gradient(to bottom,
+    rgba(255,255,255,0.25),
+    rgba(255,255,255,0.95) 30%,
+    rgba(255,255,255,0.95) 70%,
+    rgba(255,255,255,0.25)
+  );
+  box-shadow: 0 0 8px 4px rgba(255,255,255,0.35);
   opacity: 0;
-  /* Match fill transition so the bar tracks exactly */
-  transition: left 40ms linear, opacity 0.08s;
+  transition: left 55ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.08s;
   z-index: 5;
   pointer-events: none;
 }
@@ -1877,7 +1903,25 @@ function parsePlain(plain) {
 // ══════════════════════════════════════════════════════════════════
 //  Video loading
 // ══════════════════════════════════════════════════════════════════
+// ── Embed redirect cache ───────────────────────────────────────────
+// When autoFindAlternative succeeds it calls setEmbedRedirect() so
+// the next time the same blocked video is requested we skip the error
+// entirely and jump straight to the known-good alternative.
+function setEmbedRedirect(blockedId, workingId) {
+  try { localStorage.setItem('embed_redir_' + blockedId, workingId); } catch (_) {}
+}
+function getEmbedRedirect(id) {
+  try { return localStorage.getItem('embed_redir_' + id) || null; } catch (_) { return null; }
+}
+
 function loadVideo(videoId) {
+  // Check if we already know this video blocks embedding — redirect instantly
+  const redirect = getEmbedRedirect(videoId);
+  if (redirect && redirect !== videoId) {
+    flashStatus('ok', 'Using cached alternate upload ↗', 1500);
+    videoId = redirect;
+  }
+
   const placeholder = document.getElementById('videoPlaceholder');
   if (placeholder) placeholder.style.display = 'none';
 
@@ -1947,9 +1991,10 @@ async function onPlayerState(e) {
         flashStatus('ok', `Restored timing: ${savedOff >= 0 ? '+' : ''}${savedOff.toFixed(1)}s`, 2000);
       }
 
-      // Grab duration while PLAYING (most reliable), then pause.
+      // Fetch lyrics while video plays silently — no pause needed.
+      // This makes the video start instantly; lyrics sync catches up
+      // from wherever the video is when the fetch completes.
       const duration = player.getDuration();
-      player.pauseVideo();
 
       lyrics = await fetchLyrics(info.title || '', duration);
 
@@ -1962,19 +2007,30 @@ async function onPlayerState(e) {
       if (!stemsActive) {
         player.unMute();
         player.setVolume(100);
+      } else {
+        // Re-enforce mute in case the browser briefly restored volume
+        player.mute();
+        player.setVolume(0);
       }
 
-      // Seek to beginning and resume; the resulting PLAYING event will
-      // hit the else-branch below and call startSync().
-      player.seekTo(0, true);
-      player.playVideo();
-      return;   // don't call startSync() here — wait for the PLAYING re-fire
+      // Start sync from wherever the video is now.
+      // Only seek back to 0 if we're still in the first 3 s (intro hasn't passed).
+      if (player.getCurrentTime() < 3) player.seekTo(0, true);
+      startSync();
+      return;
     }
 
     // If autoFindAlternative is trying a candidate and it started playing, signal success
     if (window._autoFindResolve) {
       window._autoFindResolve(true);
       // Don't return — let normal startup (lyrics fetch etc.) proceed below
+    }
+
+    // Re-enforce YT mute every time PLAYING fires while stems are active.
+    // The browser can briefly restore volume after seek/pause events.
+    if (stemsActive) {
+      player.mute();
+      player.setVolume(0);
     }
 
     startSync();
@@ -2045,13 +2101,15 @@ function onPlayerError(e) {
   }
 
   if (embedBlocked.includes(e.data)) {
-    // Extract title of the blocked video to drive the auto-search
+    // Use the player's actual video data — currentVideoId may still be the
+    // previous song if PLAYING never fired for this video.
     let blockedTitle = '';
-    const blockedId  = currentVideoId || '';
+    let blockedId    = '';
     try {
       const vdata = player.getVideoData();
-      if (vdata && vdata.title) blockedTitle = vdata.title;
-    } catch (_) {}
+      blockedId   = vdata.video_id  || currentVideoId || '';
+      blockedTitle = vdata.title    || '';
+    } catch (_) { blockedId = currentVideoId || ''; }
 
     const searchQuery = blockedTitle ? blockedTitle + ' official audio' : '';
     const ytSearchUrl = searchQuery
@@ -2156,7 +2214,9 @@ async function autoFindAlternative(blockedId, query, errDiv) {
       });
 
       if (ok) {
-        // Video loaded cleanly — remove overlay and show iframe
+        // Video loaded cleanly — cache the redirect so next time we skip the error
+        if (blockedId && id !== blockedId) setEmbedRedirect(blockedId, id);
+        // Remove overlay and show iframe
         if (errDiv && errDiv.parentNode) errDiv.remove();
         const ytFrame = document.getElementById('ytPlayer');
         if (ytFrame) ytFrame.style.visibility = 'visible';
@@ -2387,35 +2447,34 @@ function syllabify(word) {
 // ══════════════════════════════════════════════════════════════════
 //  setFillPct — central helper for driving one word's wipe
 //
-//  pct  0–100 (float).  Handles:
-//    • fill.style.width (the overflow-clip reveal)
-//    • --fill-x CSS var (drives the scan-line ::after pseudo-element)
-//    • .wiping class   (shows/hides the scan-line glow)
-//    • .word-complete flash (one-shot brightness burst on completion)
+//  pct  0–100 (float).  Drives the ink-brush mask wipe:
+//    • --fill-pct CSS var  → mask-image gradient position on fill element
+//                            (the @property declaration lets CSS interpolate it)
+//    • .wiping class       → shows/hides the scan-line glow
+//    • .word-complete      → one-shot brightness burst on completion
 // ══════════════════════════════════════════════════════════════════
 function setFillPct(wrap, fill, pct) {
   const pctStr = pct.toFixed(1) + '%';
-  fill.style.width = pctStr;
+
+  // Drive the mask-image gradient via the registered @property custom var.
+  // CSS transitions on --fill-pct smooth out the RAF frame steps automatically.
+  fill.style.setProperty('--fill-pct', pctStr);
+  // Scan-line ::after also reads --fill-pct from the wrap element
+  wrap.style.setProperty('--fill-pct', pctStr);
 
   if (pct >= 99.5) {
-    // Word is done — hide scan-line, fire completion flash once
     wrap.classList.remove('wiping');
-    wrap.style.setProperty('--fill-x', '100%');
     if (!wrap.dataset.done) {
       wrap.dataset.done = '1';
       wrap.classList.add('word-complete');
       setTimeout(() => wrap.classList.remove('word-complete'), 420);
     }
   } else if (pct <= 0.5) {
-    // Word not yet started — everything hidden
     wrap.classList.remove('wiping', 'word-complete');
-    wrap.style.setProperty('--fill-x', '0%');
     delete wrap.dataset.done;
   } else {
-    // Mid-wipe — show scan-line at the fill frontier
     wrap.classList.add('wiping');
     wrap.classList.remove('word-complete');
-    wrap.style.setProperty('--fill-x', pctStr);
     delete wrap.dataset.done;
   }
 }
@@ -3168,10 +3227,15 @@ async function activateStemAudio(instrUrl, vocalsUrl) {
     }
   }
 
-  // Drift correction every 2 s — keeps both stems locked to YouTube time
+  // Drift correction every 2 s — keeps both stems locked to YouTube time.
+  // Also re-enforces YT mute on each tick so any browser volume restoration
+  // (e.g. after seek, ad, or state change) is immediately cancelled.
   clearInterval(stemsDriftTimer);
   stemsDriftTimer = setInterval(() => {
     if (!player || !player.getCurrentTime) return;
+    // Always keep YT muted while stems are active
+    if (player.mute)      player.mute();
+    if (player.setVolume) player.setVolume(0);
     const ytTime = player.getCurrentTime();
     if (stemsAudio  && Math.abs(stemsAudio.currentTime  - ytTime) > 0.5) stemsAudio.currentTime  = ytTime;
     if (vocalsAudio && Math.abs(vocalsAudio.currentTime - ytTime) > 0.5) vocalsAudio.currentTime = ytTime;
